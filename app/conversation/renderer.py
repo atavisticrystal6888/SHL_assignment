@@ -48,15 +48,16 @@ def maybe_rewrite_reply(
     llm_client: LLMClient,
     *,
     catalog_context: list[str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> ChatResponse:
-    if not llm_client.enabled:
+    if not llm_client.enabled or (timeout_seconds is not None and timeout_seconds <= 0):
         return response
 
     prompt = build_grounded_reply_prompt(
         summarize_user_goal(goal),
         "\n".join(catalog_context or ["No additional catalog context."]),
     )
-    result = llm_client.complete(prompt, response.reply)
+    result = llm_client.complete(prompt, response.reply, timeout_seconds=timeout_seconds)
     if result.text == response.reply:
         return response
     return response.model_copy(update={"reply": result.text})
@@ -66,6 +67,10 @@ def render_clarification(goal: UserGoalProfile, decision: AgentDecision) -> Chat
     missing = set(decision.missing_factors)
     if "role" in missing:
         reply = "What role or job profile should the SHL assessment support, and what skills or seniority matter most?"
+    elif "language" in missing:
+        reply = "What language should the SHL assessment support for the candidate interactions or spoken responses?"
+    elif "locale" in missing:
+        reply = "Which English variant should I target for the spoken-language screen: US, UK, Australian, or Indian?"
     elif {"seniority", "assessment_focus"}.issubset(missing):
         reply = "What seniority or experience level is this for, and should the assessment focus on skills, cognitive ability, personality, or situational judgment?"
     elif "seniority" in missing:
@@ -97,7 +102,7 @@ def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -
         f"Here is a catalog-grounded SHL shortlist for {role}, prioritized from the available catalog matches: "
         f"{shortlist_anchor_text(matches)}."
     )
-    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=False)
+    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=True)
 
 
 def render_refinement(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:
@@ -115,7 +120,7 @@ def render_refinement(goal: UserGoalProfile, matches: list[CatalogMatch]) -> Cha
     )
     if goal.excluded_terms:
         reply += f" Removed: {', '.join(goal.excluded_terms)}."
-    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=False)
+    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=True)
 
 
 def render_comparison(goal: UserGoalProfile, resolutions: list[CatalogResolution]) -> ChatResponse:
@@ -153,7 +158,7 @@ def render_refusal(decision: AgentDecision) -> ChatResponse:
     if decision.reason == "legal_advice":
         reply = "I can't provide legal advice. I can help select SHL assessments using catalog-backed product information."
     elif decision.reason == "general_hiring":
-        reply = "I can help with SHL assessment selection, but not general hiring strategy or interview-question generation."
+        reply = "I can help with SHL assessment selection, but not general hiring content such as job descriptions, hiring strategy, or interview-question generation."
     elif decision.reason == "non_shl":
         reply = "I can only recommend SHL catalog assessments, not non-SHL products."
     else:

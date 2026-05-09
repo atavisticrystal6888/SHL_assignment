@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SHL Assessment Recommender</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f5efe6;
+        --panel: rgba(255, 251, 245, 0.88);
+        --ink: #1f2a2e;
+        --muted: #58656c;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --line: rgba(17, 94, 89, 0.16);
+        --glow: rgba(15, 118, 110, 0.15);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Aptos, "Segoe UI Variable", "Trebuchet MS", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top right, rgba(247, 148, 29, 0.18), transparent 30%),
+          radial-gradient(circle at left center, rgba(15, 118, 110, 0.16), transparent 28%),
+          linear-gradient(160deg, #fbf7f0 0%, var(--page) 48%, #ecf5f2 100%);
+      }
+
+      main {
+        width: min(1080px, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 3rem 0 4rem;
+      }
+
+      .hero {
+        display: grid;
+        gap: 1.5rem;
+        padding: 2rem;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 24px 60px rgba(31, 42, 46, 0.1);
+      }
+
+      .eyebrow {
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        color: var(--accent-strong);
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.4rem, 6vw, 4.8rem);
+        line-height: 0.95;
+        max-width: 11ch;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 180px;
+        padding: 0.95rem 1.2rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        text-decoration: none;
+        font-weight: 700;
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        color: white;
+        background: linear-gradient(135deg, var(--accent) 0%, #1d4d4a 100%);
+        box-shadow: 0 14px 30px var(--glow);
+      }
+
+      .button-secondary {
+        color: var(--accent-strong);
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.68);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin-top: 1.4rem;
+      }
+
+      .card {
+        padding: 1.2rem;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(88, 101, 108, 0.14);
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 0.45rem;
+        font-size: 1rem;
+      }
+
+      .endpoint {
+        display: inline-block;
+        margin-top: 0.6rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        color: var(--accent-strong);
+        background: rgba(15, 118, 110, 0.1);
+      }
+
+      @media (max-width: 640px) {
+        main {
+          width: min(100% - 1rem, 720px);
+          padding-top: 1rem;
+        }
+
+        .hero {
+          padding: 1.25rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">SHL Assignment</div>
+        <h1>Assessment recommendations with a browser entrypoint.</h1>
+        <p>
+          This landing page gives you a lightweight front door into the recommender service. Open the chat workspace to try the
+          backend directly, or inspect the live health route in a browser-friendly view.
+        </p>
+        <div class="actions">
+          <a class="button button-primary" href="/chat">Open Chat Workspace</a>
+          <a class="button button-secondary" href="/health">View Health Status</a>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <strong>Landing Page</strong>
+            <p>Human-friendly entrypoint for the recommender service.</p>
+            <span class="endpoint">GET /</span>
+          </article>
+          <article class="card">
+            <strong>Health View</strong>
+            <p>Browser page backed by the same health JSON contract used by deployment checks.</p>
+            <span class="endpoint">GET /health</span>
+          </article>
+          <article class="card">
+            <strong>Chat Window</strong>
+            <p>Simple client for sending messages to the existing POST /chat API without extra tooling.</p>
+            <span class="endpoint">GET /chat and POST /chat</span>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

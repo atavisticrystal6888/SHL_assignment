@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import time
 from typing import Any
 
 from fastapi import Body, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.api.chat_page_router import router as chat_page_router
+from app.api.health_router import router as health_router
+from app.api.landing_router import router as landing_router
 from app.api.schemas import ChatResponse
 from app.api.validators import malformed_chat_response, parse_chat_request, validate_chat_response, validate_refusal_response
 from app.catalog.repository import CatalogRepository
@@ -30,7 +34,14 @@ from app.retrieval.ranker import rank_catalog, rerank_catalog_with_llm_result
 from app.settings import settings
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app.include_router(landing_router)
+app.include_router(health_router)
+app.include_router(chat_page_router)
 DEBUG_HEADER = "x-debug-llm"
+REQUEST_BUDGET_SECONDS = 27.5
+LLM_INTENT_RESERVE_SECONDS = 8.0
+LLM_RERANK_RESERVE_SECONDS = 3.5
+LLM_REWRITE_RESERVE_SECONDS = 1.0
 
 
 def debug_requested(request: Request) -> bool:
@@ -50,6 +61,11 @@ def catalog_repository() -> CatalogRepository:
 
 
 @lru_cache(maxsize=1)
+def catalog_index() -> Any:
+    return build_catalog_index(catalog_repository().eligible_records)
+
+
+@lru_cache(maxsize=1)
 def llm_client() -> LLMClient:
     return LLMClient(
         api_key=settings.llm_api_key,
@@ -58,27 +74,31 @@ def llm_client() -> LLMClient:
     )
 
 
+def request_deadline() -> float:
+    return time.perf_counter() + REQUEST_BUDGET_SECONDS
+
+
+def remaining_budget_seconds(deadline: float) -> float:
+    return max(0.0, deadline - time.perf_counter())
+
+
+def llm_timeout_seconds(
+    deadline: float,
+    client: LLMClient,
+    *,
+    reserve_seconds: float,
+    cap_seconds: float,
+) -> float | None:
+    remaining = remaining_budget_seconds(deadline) - reserve_seconds
+    if remaining < 1.0:
+        return None
+    return min(client.timeout_seconds, cap_seconds, remaining)
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, _exc: RequestValidationError) -> JSONResponse:
     response = malformed_chat_response()
     return JSONResponse(status_code=200, content=response.model_dump())
-
-
-@app.get("/")
-def root() -> dict[str, Any]:
-    return {
-        "service": "shl-assessment-recommender",
-        "status": "ok",
-        "endpoints": {
-            "health": "/health",
-            "chat": "/chat",
-        },
-    }
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -88,11 +108,19 @@ def chat(http_request: Request, http_response: Response, payload: Any = Body(def
         set_debug_headers(http_response, http_request, intent_status="not_applicable", rerank_status="not_applicable")
         return validate_chat_response(malformed, recommendations_allowed=False)
     assert chat_request is not None
+    deadline = request_deadline()
     client = llm_client()
+    intent_timeout = llm_timeout_seconds(
+        deadline,
+        client,
+        reserve_seconds=LLM_INTENT_RESERVE_SECONDS,
+        cap_seconds=4.0,
+    )
     extraction = extract_user_goal_result(
         chat_request.messages,
         llm_client=client,
         enable_llm=settings.llm_enable_intent_extraction,
+        llm_timeout_seconds=intent_timeout if intent_timeout is not None else 0.0,
     )
     goal = extraction.goal
     decision = decide_next_action(goal)
@@ -109,33 +137,64 @@ def chat(http_request: Request, http_response: Response, payload: Any = Body(def
     if decision.action in {"recommend", "refine"}:
         catalog = catalog_repository()
         retrieval_query = build_retrieval_query(goal)
-        index = build_catalog_index(catalog.eligible_records)
         matches = rank_catalog(
-            index,
+            catalog_index(),
             retrieval_query.query_text,
             limit=10,
             preferred_categories=retrieval_query.preferred_categories,
             required_terms=retrieval_query.required_terms,
             job_level_signals=retrieval_query.job_level_signals,
+            language_signals=retrieval_query.language_signals,
+            locale_signal=retrieval_query.locale_signal,
             excluded_terms=retrieval_query.excluded_terms,
             constraints=retrieval_query.constraints,
         )
         rerank_status = "disabled_by_config"
+        rerank_timeout = llm_timeout_seconds(
+            deadline,
+            client,
+            reserve_seconds=LLM_RERANK_RESERVE_SECONDS,
+            cap_seconds=3.0,
+        )
         if settings.llm_enable_reranking:
-            rerank_result = rerank_catalog_with_llm_result(matches, goal, client, limit=10)
+            rerank_result = rerank_catalog_with_llm_result(
+                matches,
+                goal,
+                client,
+                limit=10,
+                llm_timeout_seconds=rerank_timeout if rerank_timeout is not None else 0.0,
+            )
             matches = rerank_result.matches
             rerank_status = rerank_result.llm_status
         if matches:
             set_debug_headers(http_response, http_request, intent_status=extraction.llm_status, rerank_status=rerank_status)
             response = render_refinement(goal, matches) if decision.action == "refine" else render_recommendations(goal, matches)
+            rewrite_timeout = llm_timeout_seconds(
+                deadline,
+                client,
+                reserve_seconds=LLM_REWRITE_RESERVE_SECONDS,
+                cap_seconds=2.0,
+            )
             response = maybe_rewrite_reply(
                 response,
                 goal,
                 client,
                 catalog_context=[render_catalog_facts(match.assessment) for match in matches[:5]],
+                timeout_seconds=rewrite_timeout if rewrite_timeout is not None else 0.0,
             )
             return validate_chat_response(response, catalog=catalog, recommendations_allowed=True)
     response = render_clarification(goal, decision)
     set_debug_headers(http_response, http_request, intent_status=extraction.llm_status, rerank_status="not_applicable")
-    response = maybe_rewrite_reply(response, goal, client)
+    rewrite_timeout = llm_timeout_seconds(
+        deadline,
+        client,
+        reserve_seconds=LLM_REWRITE_RESERVE_SECONDS,
+        cap_seconds=2.0,
+    )
+    response = maybe_rewrite_reply(
+        response,
+        goal,
+        client,
+        timeout_seconds=rewrite_timeout if rewrite_timeout is not None else 0.0,
+    )
     return validate_chat_response(response, recommendations_allowed=False)

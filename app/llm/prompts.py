@@ -33,7 +33,7 @@ def build_intent_extraction_prompt(messages: list[ConversationMessage], current_
         f"{CATALOG_GROUNDING_RULES}\n\n"
         f"{JSON_ONLY_RULES}\n\n"
         "Extract only explicit or strongly implied hiring intent from the conversation. "
-        "Return a JSON object with keys role_titles, skills, seniority, assessment_focus, constraints, and comparison_targets. "
+        "Return a JSON object with keys role_titles, skills, seniority, assessment_focus, constraints, comparison_targets, languages, and locale. "
         "assessment_focus values must be chosen from: skills, ability, personality, situational judgment, simulation.\n\n"
         f"Current extracted summary:\n{current_summary.strip()}\n\n"
         f"Conversation history:\n{format_conversation(messages)}"

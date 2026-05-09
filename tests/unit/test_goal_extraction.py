@@ -127,6 +127,70 @@ def test_confirmation_after_prior_shortlist_keeps_context_actionable():
     assert goal.latest_intent == "recommend"
 
 
+def test_contact_center_screening_requires_language_before_shortlist():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We're screening 500 entry-level contact centre agents. Inbound calls, customer service focus. What should we use?",
+            )
+        ]
+    )
+
+    assert "simulation" in goal.assessment_focus
+    assert "language" in goal.missing_decision_factors
+
+
+def test_spoken_english_screening_requires_locale_after_language():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We're screening 500 entry-level contact centre agents. Inbound calls, customer service focus. What should we use?",
+            ),
+            ConversationMessage(role="assistant", content="What language are the calls in?"),
+            ConversationMessage(role="user", content="English."),
+        ]
+    )
+
+    assert goal.languages == ["English"]
+    assert goal.locale is None
+    assert "locale" in goal.missing_decision_factors
+
+
+def test_spoken_english_locale_signal_unlocks_recommendation():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We're screening 500 entry-level contact centre agents. Inbound calls, customer service focus. What should we use?",
+            ),
+            ConversationMessage(role="assistant", content="What language are the calls in?"),
+            ConversationMessage(role="user", content="English."),
+            ConversationMessage(role="assistant", content="Which English variant should I target?"),
+            ConversationMessage(role="user", content="US."),
+        ]
+    )
+
+    assert goal.languages == ["English"]
+    assert goal.locale == "US"
+    assert goal.missing_decision_factors == []
+    assert goal.latest_intent == "recommend"
+
+
+def test_full_battery_request_extracts_multi_focus_bundle():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We run a graduate management trainee scheme. We need a full battery - cognitive, personality, and situational judgement. All recent graduates.",
+            )
+        ]
+    )
+
+    assert set(goal.assessment_focus) >= {"ability", "personality", "situational judgment"}
+
+
 def test_screening_prompt_extracts_role_and_skills_focus():
     goal = extract_user_goal(
         [
@@ -159,6 +223,23 @@ def test_refinement_intent_wins_over_confirmation_language():
     )
 
     assert "OPQ" in goal.excluded_terms
+    assert goal.latest_intent == "refine"
+
+
+def test_role_pivot_refinement_resets_previous_role_context():
+    latest_turn = "Actually switch to a senior sales manager role and assess sales leadership and personality fit instead."
+    goal = extract_user_goal(
+        [
+            ConversationMessage(role="user", content="Hiring a mid-level Java developer. Assess Java technical skills."),
+            ConversationMessage(role="assistant", content="Shortlist includes Core Java and Spring."),
+            ConversationMessage(role="user", content=latest_turn),
+        ]
+    )
+
+    assert any("sales manager" in role.lower() for role in goal.role_titles)
+    assert "Sales" in goal.skills
+    assert "Java" not in goal.skills
+    assert goal.conversation_text == latest_turn
     assert goal.latest_intent == "refine"
 
 

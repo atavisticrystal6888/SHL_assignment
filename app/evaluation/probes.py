@@ -55,6 +55,28 @@ def default_behavior_probes() -> list[BehaviorProbe]:
             and all("opq" not in item.get("name", "").lower() for item in body.get("recommendations", [])),
         ),
         BehaviorProbe(
+            probe_id="role_pivot_refinement",
+            messages=[
+                {"role": "user", "content": "Hiring a mid-level Java developer. Assess Java technical skills."},
+                {"role": "assistant", "content": "Shortlist includes Core Java (Advanced Level) and Spring."},
+                {
+                    "role": "user",
+                    "content": "Actually switch to a senior sales manager role and assess sales leadership and personality fit instead.",
+                },
+            ],
+            assertion="role pivot replaces stale shortlist context instead of mixing prior technical results",
+            predicate=lambda body: body.get("recommendations")
+            and "updated" in body.get("reply", "").lower()
+            and any(
+                "sales" in item.get("name", "").lower() or "opq" in item.get("name", "").lower()
+                for item in body.get("recommendations", [])
+            )
+            and all(
+                all(term not in item.get("name", "").lower() for term in ("java", "spring", "sql"))
+                for item in body.get("recommendations", [])
+            ),
+        ),
+        BehaviorProbe(
             probe_id="grounded_comparison",
             messages=[{"role": "user", "content": "Compare OPQ and GSA."}],
             assertion="comparison uses catalog-backed names and returns no recommendations",
@@ -69,6 +91,14 @@ def default_behavior_probes() -> list[BehaviorProbe]:
             predicate=lambda body: body.get("recommendations") == []
             and "imaginary-quantum" not in body.get("reply", "").lower()
             and "https://www.shl.com/products/product-catalog/view/imaginary" not in body.get("reply", "").lower(),
+        ),
+        BehaviorProbe(
+            probe_id="job_description_refusal",
+            messages=[{"role": "user", "content": "Write a job description for a senior data engineer."}],
+            assertion="job-description authoring request is refused with empty recommendations",
+            predicate=lambda body: body.get("recommendations") == []
+            and "shl" in body.get("reply", "").lower()
+            and ("job description" in body.get("reply", "").lower() or "hiring" in body.get("reply", "").lower()),
         ),
         BehaviorProbe(
             probe_id="conversational_incoherence",

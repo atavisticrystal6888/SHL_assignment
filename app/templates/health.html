@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Service Health</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #eef7f4;
+        --panel: rgba(255, 255, 255, 0.86);
+        --ink: #173038;
+        --muted: #5a6d73;
+        --ok: #0f766e;
+        --line: rgba(15, 118, 110, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        font-family: Aptos, "Segoe UI Variable", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top, rgba(15, 118, 110, 0.18), transparent 35%),
+          linear-gradient(180deg, #fbfffd 0%, var(--page) 100%);
+      }
+
+      .panel {
+        width: min(560px, 100%);
+        padding: 2rem;
+        border-radius: 28px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: 0 24px 50px rgba(23, 48, 56, 0.1);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.8rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: var(--ok);
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 0 0.3rem rgba(15, 118, 110, 0.18);
+      }
+
+      h1 {
+        margin: 1rem 0 0.6rem;
+        font-size: clamp(2rem, 6vw, 3rem);
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      pre {
+        margin: 1.4rem 0 0;
+        padding: 1rem;
+        border-radius: 18px;
+        background: #13343d;
+        color: #d7fff8;
+        overflow: auto;
+      }
+
+      a {
+        display: inline-block;
+        margin-top: 1.2rem;
+        color: var(--ok);
+        font-weight: 700;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="panel">
+      <div class="status-pill"><span class="dot"></span><span id="status-label">Checking service</span></div>
+      <h1>Service Health</h1>
+      <p>This browser view reads the same backend health endpoint used by deployment probes and exposes the live JSON payload below.</p>
+      <pre id="health-json">Loading...</pre>
+      <a href="/">Back to landing page</a>
+    </section>
+    <script>
+      async function loadHealth() {
+        const label = document.getElementById("status-label");
+        const output = document.getElementById("health-json");
+        try {
+          const response = await fetch("/health");
+          const payload = await response.json();
+          label.textContent = payload.status === "ok" ? "Healthy" : "Unavailable";
+          output.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          label.textContent = "Unavailable";
+          output.textContent = JSON.stringify({ status: "error", detail: String(error) }, null, 2);
+        }
+      }
+
+      loadHealth();
+    </script>
+  </body>
+</html>

@@ -171,9 +171,9 @@ rm -rf .venv dist build *.egg-info
 The FastAPI app now loads `.env` from the repository root automatically at startup. For local Groq-backed runs, create a `.env` file in the repo root with values like:
 
 ```env
-LLM_API_KEY=your-groq-key
-LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=your-groq-key
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=llama-3.3-70b-versatile
 LLM_ENABLE_INTENT_EXTRACTION=true
 LLM_ENABLE_RERANKING=true
 ```

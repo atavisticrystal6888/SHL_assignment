@@ -10,7 +10,7 @@ The recommender loads a normalized repository-local SHL catalog artifact at runt
 
 ## Prompt and Policy Design
 
-The current implementation uses deterministic policy and rendering as the safe baseline. The policy layer still chooses clarify, recommend, refine, compare, or refuse from the latest user turn plus full history, but an OpenAI-compatible adapter can now contribute in three constrained places when configured: filling missing intent signals from the conversation, reranking the already-filtered candidate shortlist, and rewriting reply text. Retrieval, recommendation objects, and catalog validation remain deterministic. If the provider is unavailable, malformed, or inconsistent, the service falls back to the deterministic path.
+The current implementation uses deterministic policy and rendering as the safe baseline. The policy layer still chooses clarify, recommend, refine, compare, or refuse from the latest user turn plus full history, but a Groq-backed adapter can now contribute in three constrained places when configured: filling missing intent signals from the conversation, reranking the already-filtered candidate shortlist, and rewriting reply text. Retrieval, recommendation objects, and catalog validation remain deterministic. If the provider is unavailable, malformed, or inconsistent, the service falls back to the deterministic path.
 
 ## Evaluation Approach
 

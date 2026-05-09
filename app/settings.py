@@ -20,6 +20,17 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is None:
+            continue
+        value = value.strip()
+        if value:
+            return value
+    return default
+
+
 @dataclass(frozen=True)
 class Settings:
     catalog_path: Path = PROJECT_ROOT / os.getenv("CATALOG_PATH", "data/processed/catalog.json")
@@ -27,9 +38,9 @@ class Settings:
         "CATALOG_COVERAGE_PATH", "data/processed/catalog_coverage.json"
     )
     trace_fixtures_dir: Path = PROJECT_ROOT / os.getenv("TRACE_FIXTURES_DIR", "data/traces/public")
-    llm_api_key: str = os.getenv("LLM_API_KEY", "")
-    llm_base_url: str = os.getenv("LLM_BASE_URL", "")
-    llm_model: str = os.getenv("LLM_MODEL", "")
+    llm_api_key: str = env_first("GROQ_API_KEY", "LLM_API_KEY")
+    llm_base_url: str = env_first("GROQ_BASE_URL", "LLM_BASE_URL")
+    llm_model: str = env_first("GROQ_MODEL", "LLM_MODEL")
     llm_enable_intent_extraction: bool = env_bool("LLM_ENABLE_INTENT_EXTRACTION", True)
     llm_enable_reranking: bool = env_bool("LLM_ENABLE_RERANKING", True)
 

@@ -19,7 +19,7 @@ deployment readiness, and the required two-page approach document.
 ## Technical Context
 
 **Language/Version**: Python 3.11+ for broad FastAPI and free-hosting compatibility  
-**Primary Dependencies**: FastAPI, Pydantic v2, Uvicorn, httpx, beautifulsoup4/lxml for catalog refresh, scikit-learn for local TF-IDF retrieval/ranking, optional OpenAI-compatible raw LLM SDK selected by environment variable with deterministic fallback when no key is configured  
+**Primary Dependencies**: FastAPI, Pydantic v2, Uvicorn, httpx, beautifulsoup4/lxml for catalog refresh, scikit-learn for local TF-IDF retrieval/ranking, optional Groq-backed chat-completions provider selected by environment variable with deterministic fallback when no key is configured  
 **Storage**: Repository-local JSON/normalized artifact files loaded read-only at startup; no per-conversation database or server-side session storage  
 **Testing**: pytest, FastAPI TestClient/httpx, JSON Schema or Pydantic validation, replay fixtures for public traces, behavior-probe tests  
 **Target Platform**: Render Web Service running a public Linux FastAPI deployment with cold-start health checks  

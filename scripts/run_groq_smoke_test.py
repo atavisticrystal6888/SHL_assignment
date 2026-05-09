@@ -26,13 +26,13 @@ def local_llm_configuration_status() -> dict[str, str | bool]:
 
     env_text = env_path.read_text(encoding="utf-8")
     api_key_present = any(
-        line.startswith("LLM_API_KEY=") and bool(line.split("=", maxsplit=1)[1].strip())
+        line.startswith(("GROQ_API_KEY=", "LLM_API_KEY=")) and bool(line.split("=", maxsplit=1)[1].strip())
         for line in env_text.splitlines()
         if not line.lstrip().startswith("#")
     )
     note = ""
     if not api_key_present:
-        note = "The repo-root .env file exists, but LLM_API_KEY is empty. Add a valid Groq key and restart the FastAPI server."
+        note = "The repo-root .env file exists, but GROQ_API_KEY is empty. Add a valid Groq key and restart the FastAPI server."
     return {
         "env_file_present": True,
         "llm_api_key_present": api_key_present,

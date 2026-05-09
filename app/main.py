@@ -115,6 +115,8 @@ def chat(http_request: Request, http_response: Response, payload: Any = Body(def
             retrieval_query.query_text,
             limit=10,
             preferred_categories=retrieval_query.preferred_categories,
+            required_terms=retrieval_query.required_terms,
+            job_level_signals=retrieval_query.job_level_signals,
             excluded_terms=retrieval_query.excluded_terms,
             constraints=retrieval_query.constraints,
         )

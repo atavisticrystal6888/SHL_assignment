@@ -51,6 +51,113 @@ def test_rank_catalog_filters_ineligible_records():
     assert rank_catalog(index, "Java", limit=10) == []
 
 
+def test_rank_catalog_boosts_named_assessments_in_long_query():
+    verify = CatalogAssessment(
+        entity_id="1",
+        name="SHL Verify Interactive G+",
+        url="https://www.shl.com/products/product-catalog/view/shl-verify-interactive-g/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="Measures general cognitive ability.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    graduate = CatalogAssessment(
+        entity_id="2",
+        name="Graduate Scenarios",
+        url="https://www.shl.com/products/product-catalog/view/graduate-scenarios/",
+        test_type="B",
+        categories=["Biodata & Situational Judgment"],
+        description="Situational judgment scenarios for graduate hires.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    unrelated = CatalogAssessment(
+        entity_id="3",
+        name="Global Skills Development Report",
+        url="https://www.shl.com/products/product-catalog/view/global-skills-development-report/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="Development report.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([unrelated, graduate, verify])
+
+    matches = rank_catalog(
+        index,
+        "We run a graduate management trainee scheme. Drop the OPQ. Final list: Verify G+ and Graduate Scenarios.",
+        limit=2,
+        preferred_categories=["ability", "situational judgment"],
+        job_level_signals=["graduate"],
+    )
+
+    assert {match.assessment.entity_id for match in matches} == {"1", "2"}
+
+
+def test_rank_catalog_boosts_required_skill_terms():
+    hipaa = CatalogAssessment(
+        entity_id="1",
+        name="HIPAA (Security)",
+        url="https://www.shl.com/products/product-catalog/view/hipaa-security/",
+        test_type="K",
+        categories=["Knowledge & Skills"],
+        description="Measures HIPAA security knowledge.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    personality = CatalogAssessment(
+        entity_id="2",
+        name="Occupational Personality Questionnaire OPQ32r",
+        url="https://www.shl.com/products/product-catalog/view/occupational-personality-questionnaire-opq32r/",
+        test_type="P",
+        categories=["Personality & Behavior"],
+        description="Measures workplace personality preferences.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([personality, hipaa])
+
+    matches = rank_catalog(
+        index,
+        "Healthcare admin role with HIPAA-critical work.",
+        limit=1,
+        preferred_categories=["skills", "personality"],
+        required_terms=["HIPAA"],
+    )
+
+    assert matches[0].assessment.entity_id == "1"
+
+
+def test_rank_catalog_boosts_known_aliases_to_canonical_assessment():
+    verify_interactive = CatalogAssessment(
+        entity_id="1",
+        name="SHL Verify Interactive G+",
+        url="https://www.shl.com/products/product-catalog/view/shl-verify-interactive-g/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="Interactive general ability assessment.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    verify_short = CatalogAssessment(
+        entity_id="2",
+        name="Verify - G+",
+        url="https://www.shl.com/products/product-catalog/view/verify-g/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="General ability assessment.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([verify_short, verify_interactive])
+
+    matches = rank_catalog(index, "Final list: Verify G+ and Graduate Scenarios.", limit=1)
+
+    assert matches[0].assessment.entity_id == "1"
+
+
 def test_rerank_catalog_with_llm_reorders_existing_candidates_only():
     java = CatalogAssessment(
         entity_id="1",
@@ -86,7 +193,7 @@ def test_rerank_catalog_with_llm_reorders_existing_candidates_only():
     client = LLMClient(
         api_key="test-key",
         base_url="https://example.com/v1",
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         transport=httpx.MockTransport(handler),
     )
 
@@ -126,7 +233,7 @@ def test_rerank_catalog_with_llm_result_reports_status():
     client = LLMClient(
         api_key="test-key",
         base_url="https://example.com/v1",
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         transport=httpx.MockTransport(handler),
     )
 

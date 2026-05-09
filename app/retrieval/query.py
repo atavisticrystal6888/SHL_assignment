@@ -19,6 +19,7 @@ class RetrievalQuery:
 
 def build_retrieval_query(goal: UserGoalProfile) -> RetrievalQuery:
     parts = [
+        goal.conversation_text,
         " ".join(goal.role_titles),
         " ".join(goal.skills),
         goal.seniority or "",

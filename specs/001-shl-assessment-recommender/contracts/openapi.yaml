@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: Conversational SHL Assessment Recommender API
+  version: 0.1.0
+  description: Stateless evaluator-facing API for SHL assessment recommendation conversations.
+paths:
+  /health:
+    get:
+      summary: Readiness health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is reachable and ready after wake-up.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    const: ok
+              examples:
+                ok:
+                  value:
+                    status: ok
+  /chat:
+    post:
+      summary: Continue a stateless SHL assessment recommendation conversation
+      operationId: postChat
+      description: Malformed or unusable chat input must be handled by application validation and returned as the same strict ChatResponse shape, not as FastAPI's default validation-error body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              javaDeveloper:
+                value:
+                  messages:
+                    - role: user
+                      content: Hiring a Java developer who works with stakeholders
+                    - role: assistant
+                      content: Sure. What is seniority level?
+                    - role: user
+                      content: Mid-level, around 4 years
+      responses:
+        '200':
+          description: Next assistant reply, with recommendations only after commitment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              examples:
+                clarification:
+                  value:
+                    reply: I can help with SHL assessment selection. What role, skills, and seniority should the assessment cover?
+                    recommendations: []
+                    end_of_conversation: false
+                recommendation:
+                  value:
+                    reply: Here is a catalog-grounded shortlist for a mid-level Java developer with stakeholder needs.
+                    recommendations:
+                      - name: Java 8 (New)
+                        url: https://www.shl.com/products/product-catalog/view/java-8-new/
+                        test_type: K
+                    end_of_conversation: false
+                malformedInput:
+                  value:
+                    reply: I could not use that message history. Please send a messages array with user and assistant entries that include non-empty content.
+                    recommendations: []
+                    end_of_conversation: false
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+    ConversationMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+        content:
+          type: string
+          minLength: 1
+    ChatResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - reply
+        - recommendations
+        - end_of_conversation
+      properties:
+        reply:
+          type: string
+          minLength: 1
+        recommendations:
+          type: array
+          minItems: 0
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Recommendation'
+        end_of_conversation:
+          type: boolean
+    Recommendation:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - url
+        - test_type
+      properties:
+        name:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+          pattern: '^https://www\\.shl\\.com/products/product-catalog/view/.+'
+        test_type:
+          type: string
+          minLength: 1
+          description: Catalog-derived assessment type code such as K, P, A, B, or another supported SHL/evaluator type.

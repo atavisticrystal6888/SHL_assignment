@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: shl-assessment-recommender
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: CATALOG_PATH
+        value: data/processed/catalog.json
+      - key: CATALOG_COVERAGE_PATH
+        value: data/processed/catalog_coverage.json
+      - key: TRACE_FIXTURES_DIR
+        value: data/traces/public

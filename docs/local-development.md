@@ -166,7 +166,37 @@ rm -rf .venv dist build *.egg-info
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
 | TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
-## 13. Next Steps
+## 13. Local `.env` Loading For Groq
+
+The FastAPI app now loads `.env` from the repository root automatically at startup. For local Groq-backed runs, create a `.env` file in the repo root with values like:
+
+```env
+LLM_API_KEY=your-groq-key
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=openai/gpt-oss-120b
+LLM_ENABLE_INTENT_EXTRACTION=true
+LLM_ENABLE_RERANKING=true
+```
+
+Restart the server after changing `.env`, because settings are read at process startup.
+
+## 14. Groq Smoke Test
+
+With the server running locally, verify Groq-backed intent extraction and reranking through optional debug headers:
+
+```bash
+python scripts/run_groq_smoke_test.py
+```
+
+The script calls `/health`, then `/chat` with the request header `X-Debug-LLM: 1`. It prints:
+
+- the JSON response body
+- `intent_extraction_status`
+- `reranking_status`
+
+`llm_success` means the live response used the LLM for that stage. The debug headers are omitted unless you send `X-Debug-LLM: 1`, so the evaluator-facing JSON contract remains unchanged.
+
+## 15. Next Steps
 
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied

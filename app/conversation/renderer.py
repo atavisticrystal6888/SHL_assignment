@@ -78,6 +78,11 @@ def render_clarification(goal: UserGoalProfile, decision: AgentDecision) -> Chat
     return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
 
 
+def shortlist_anchor_text(matches: list[CatalogMatch], *, limit: int = 5) -> str:
+    names = [match.assessment.name for match in matches[:limit]]
+    return "; ".join(names) if names else "no matching assessments"
+
+
 def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:
     role = goal.role_titles[0] if goal.role_titles else "the role"
     recommendations = [
@@ -88,7 +93,10 @@ def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -
         }
         for match in matches[:10]
     ]
-    reply = f"Here is a catalog-grounded SHL shortlist for {role}, prioritized from the available catalog matches."
+    reply = (
+        f"Here is a catalog-grounded SHL shortlist for {role}, prioritized from the available catalog matches: "
+        f"{shortlist_anchor_text(matches)}."
+    )
     return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=False)
 
 
@@ -101,7 +109,10 @@ def render_refinement(goal: UserGoalProfile, matches: list[CatalogMatch]) -> Cha
         }
         for match in matches[:10]
     ]
-    reply = "Updated the SHL shortlist using the latest changes while keeping the remaining catalog-grounded context."
+    reply = (
+        "Updated the SHL shortlist using the latest changes while keeping the remaining catalog-grounded context: "
+        f"{shortlist_anchor_text(matches)}."
+    )
     if goal.excluded_terms:
         reply += f" Removed: {', '.join(goal.excluded_terms)}."
     return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=False)

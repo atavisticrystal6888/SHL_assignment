@@ -1,4 +1,4 @@
-"""Optional OpenAI-compatible LLM adapter with deterministic fallback."""
+"""Optional Groq-backed LLM adapter with deterministic fallback."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 
-DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_LLM_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_LLM_TIMEOUT_SECONDS = 15.0
 SYSTEM_PROMPT = (
     "You rewrite a reply for an SHL assessment recommender. "

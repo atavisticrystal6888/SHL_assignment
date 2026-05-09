@@ -15,12 +15,12 @@ def test_llm_client_returns_fallback_when_disabled():
     assert result.reason == "llm_disabled"
 
 
-def test_llm_client_uses_openai_compatible_chat_completions_endpoint():
+def test_llm_client_uses_groq_chat_completions_endpoint():
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == "https://example.com/v1/chat/completions"
         assert request.headers["Authorization"] == "Bearer test-key"
         payload = json.loads(request.content.decode("utf-8"))
-        assert payload["model"] == "openai/gpt-oss-120b"
+        assert payload["model"] == "llama-3.3-70b-versatile"
         assert payload["messages"][1]["content"] == "grounded prompt"
         return httpx.Response(
             200,
@@ -30,7 +30,7 @@ def test_llm_client_uses_openai_compatible_chat_completions_endpoint():
     client = LLMClient(
         api_key="test-key",
         base_url="https://example.com/v1",
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         transport=httpx.MockTransport(handler),
     )
 
@@ -48,7 +48,7 @@ def test_llm_client_falls_back_on_http_error():
     client = LLMClient(
         api_key="bad-key",
         base_url="https://example.com/v1",
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         transport=httpx.MockTransport(handler),
     )
 
@@ -69,7 +69,7 @@ def test_llm_client_complete_json_returns_payload_and_status():
     client = LLMClient(
         api_key="test-key",
         base_url="https://example.com/v1",
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         transport=httpx.MockTransport(handler),
     )
 

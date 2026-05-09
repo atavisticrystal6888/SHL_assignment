@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from app.conversation.extractor import UserGoalProfile
 
-LEGAL_TERMS = ("legal advice", "legally", "compliant", "compliance", "law", "regulation")
+LEGAL_TERMS = ("legal advice", "legally", "compliant", "law", "regulation")
 GENERAL_HIRING_TERMS = ("interview questions", "hiring strategy", "recruiting strategy", "candidate scoring")
 NON_SHL_TERMS = ("non-shl", "non shl", "hackerrank", "codility", "testgorilla", "mercer")
 PROMPT_INJECTION_TERMS = (

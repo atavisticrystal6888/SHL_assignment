@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sklearn.metrics.pairwise import cosine_similarity
 
 from app.catalog.models import CatalogAssessment
-from app.catalog.repository import normalize_name
+from app.catalog.repository import ASSESSMENT_ALIASES, normalize_name
 from app.conversation.extractor import UserGoalProfile, summarize_user_goal
 from app.llm.client import LLMClient
 from app.llm.prompts import build_rerank_prompt
@@ -60,6 +60,59 @@ def category_boost(record: CatalogAssessment, preferred_categories: list[str]) -
     return boost
 
 
+def required_terms_boost(record: CatalogAssessment, required_terms: list[str]) -> float:
+    boost = 0.0
+    name_haystack = normalize_name(record.name)
+    content_haystack = normalize_name(" ".join([record.name, record.description, " ".join(record.categories)]))
+    for term in required_terms:
+        normalized_term = normalize_name(term)
+        if not normalized_term:
+            continue
+        if normalized_term in name_haystack:
+            boost += 1.1
+        elif normalized_term in content_haystack:
+            boost += 0.4
+    return boost
+
+
+def job_level_boost(record: CatalogAssessment, job_level_signals: list[str]) -> float:
+    if not job_level_signals:
+        return 0.0
+    haystack = normalize_name(" ".join(record.job_levels + [record.name, record.description]))
+    return sum(0.4 for signal in job_level_signals if normalize_name(signal) and normalize_name(signal) in haystack)
+
+
+def query_reference_boost(record: CatalogAssessment, query: str) -> float:
+    normalized_query = normalize_name(query)
+    if not normalized_query:
+        return 0.0
+    normalized_name = normalize_name(record.name)
+    if normalized_name and normalized_name in normalized_query:
+        return 2.2
+
+    query_tokens = {token for token in normalized_query.split() if len(token) > 1}
+    name_tokens = {token for token in normalized_name.split() if len(token) > 1}
+    overlap = len(query_tokens & name_tokens)
+    if overlap >= 3:
+        return 1.4
+    if overlap == 2:
+        return 0.8
+    if overlap == 1 and any(token in normalized_name for token in query_tokens if len(token) > 3):
+        return 0.2
+    return 0.0
+
+
+def alias_reference_boost(record: CatalogAssessment, query: str) -> float:
+    normalized_query = normalize_name(query)
+    normalized_record_name = normalize_name(record.name)
+    if not normalized_query or not normalized_record_name:
+        return 0.0
+    for alias, canonical_name in ASSESSMENT_ALIASES.items():
+        if normalize_name(alias) in normalized_query and normalize_name(canonical_name) == normalized_record_name:
+            return 3.0
+    return 0.0
+
+
 def rank_catalog(
     index: CatalogIndex,
     query: str,
@@ -67,6 +120,8 @@ def rank_catalog(
     limit: int = 10,
     eligible_only: bool = True,
     preferred_categories: list[str] | None = None,
+    required_terms: list[str] | None = None,
+    job_level_signals: list[str] | None = None,
     excluded_terms: list[str] | None = None,
     constraints: list[str] | None = None,
 ) -> list[CatalogMatch]:
@@ -74,6 +129,8 @@ def rank_catalog(
     if not query or not index.records:
         return []
     preferred_categories = preferred_categories or []
+    required_terms = required_terms or []
+    job_level_signals = job_level_signals or []
     excluded_terms = excluded_terms or []
     constraints = constraints or []
     max_duration = max_duration_from_constraints(constraints)
@@ -87,7 +144,12 @@ def rank_catalog(
             continue
         if max_duration is not None and record.duration_minutes is not None and record.duration_minutes > max_duration:
             continue
-        total_score = float(score) + category_boost(record, preferred_categories)
+        total_score = float(score)
+        total_score += category_boost(record, preferred_categories)
+        total_score += required_terms_boost(record, required_terms)
+        total_score += job_level_boost(record, job_level_signals)
+        total_score += query_reference_boost(record, query)
+        total_score += alias_reference_boost(record, query)
         if "prefer_short" in constraints and record.duration_minutes is not None:
             total_score += max(0.0, (30 - record.duration_minutes) / 100)
         if total_score <= 0:

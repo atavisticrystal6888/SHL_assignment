@@ -20,6 +20,16 @@ SKILL_TERMS = [
     "SQL",
     "Sales",
     "Leadership",
+    "Angular",
+    "AWS",
+    "Customer Service",
+    "Docker",
+    "Excel",
+    "HIPAA",
+    "Medical Terminology",
+    "REST",
+    "Spring",
+    "Word",
 ]
 EXCLUSION_TERMS = {
     "Java": ("java",),
@@ -41,7 +51,23 @@ REFINEMENT_TERMS = (
     "instead",
     "correction",
     "update",
-    "keep",
+)
+CONFIRMATION_TERMS = (
+    "confirmed",
+    "confirm",
+    "final list",
+    "final shortlist",
+    "keep as-is",
+    "keep the shortlist",
+    "keep verify",
+    "locking it in",
+    "lock it in",
+    "perfect",
+    "that covers it",
+    "that works",
+    "that's good",
+    "that's what we need",
+    "understood",
 )
 COMPARISON_TERMS = (
     "compare",
@@ -106,11 +132,53 @@ CANONICAL_SENIORITY_VALUES = {
     "experience specified",
     "no preference",
 }
+ROLE_STOPWORDS = {"assessment", "assessments", "solution", "solutions", "stack", "battery"}
+SKILLS_FOCUS_HINTS = (
+    "assess technical",
+    "day-one priorities",
+    "daily",
+    "excel",
+    "hipaa",
+    "knowledge test",
+    "knowledge tests",
+    "medical terminology",
+    "priorities",
+    "priority",
+    "re-skill",
+    "reskill",
+    "screen",
+    "screening",
+    "technical skills",
+    "word",
+)
+PERSONALITY_FOCUS_HINTS = (
+    "audit",
+    "benchmark",
+    "behavior",
+    "behaviour",
+    "compliance",
+    "dependability",
+    "fit",
+    "never cutting corners",
+    "personality",
+    "reliability",
+    "safety",
+)
+SIMULATION_FOCUS_HINTS = (
+    "call simulation",
+    "inbound calls",
+    "simulation",
+    "simulations",
+    "spoken english",
+    "spoken language",
+    "volume screening",
+)
 
 
 @dataclass(frozen=True)
 class UserGoalProfile:
     latest_user_text: str = ""
+    conversation_text: str = ""
     role_titles: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     seniority: str | None = None
@@ -183,7 +251,30 @@ def normalize_seniority_hint(value: Any) -> str | None:
     return SENIORITY_TERMS.get(candidate, value.strip())
 
 
-def compute_missing_factors(role_titles: list[str], seniority: str | None, assessment_focus: list[str]) -> list[str]:
+def has_confirmation_intent(text: str) -> bool:
+    lowered = " ".join(text.lower().split())
+    return any(term in lowered for term in CONFIRMATION_TERMS)
+
+
+def text_contains(text: str, term: str) -> bool:
+    pattern = re.escape(term).replace(r"\ ", r"\s+")
+    return re.search(rf"(?<!\w){pattern}(?!\w)", text, flags=re.IGNORECASE) is not None
+
+
+def compute_missing_factors(
+    role_titles: list[str],
+    seniority: str | None,
+    assessment_focus: list[str],
+    *,
+    skills: list[str] | None = None,
+    has_prior_recommendation: bool = False,
+    latest_text: str = "",
+) -> list[str]:
+    if has_prior_recommendation and has_confirmation_intent(latest_text):
+        return []
+    if role_titles and assessment_focus:
+        return []
+
     missing: list[str] = []
     if not role_titles:
         missing.append("role")
@@ -205,11 +296,15 @@ def determine_latest_intent(
         return "compare"
     if has_refinement_intent(latest_text) and has_prior_recommendation and not missing_decision_factors:
         return "refine"
+    if has_confirmation_intent(latest_text) and has_prior_recommendation and not missing_decision_factors:
+        return "recommend"
     return "clarify" if missing_decision_factors else "recommend"
 
 
 def summarize_user_goal(goal: UserGoalProfile) -> str:
     lines = [f"Latest user request: {goal.latest_user_text}"]
+    if goal.conversation_text:
+        lines.append(f"Conversation context: {goal.conversation_text}")
     if goal.role_titles:
         lines.append(f"Role titles: {', '.join(goal.role_titles)}")
     if goal.skills:
@@ -243,7 +338,14 @@ def merge_goal_with_llm_hints(
     assessment_focus = dedupe(goal.assessment_focus + normalize_focus_hints(payload.get("assessment_focus")))
     constraints = dedupe(goal.constraints + normalize_string_list(payload.get("constraints")))
     comparison_targets = dedupe(goal.comparison_targets + normalize_string_list(payload.get("comparison_targets")))
-    missing = compute_missing_factors(role_titles, seniority, assessment_focus)
+    missing = compute_missing_factors(
+        role_titles,
+        seniority,
+        assessment_focus,
+        skills=skills,
+        has_prior_recommendation=prior_recommendation,
+        latest_text=goal.latest_user_text,
+    )
     latest_intent = determine_latest_intent(
         goal.latest_user_text,
         comparison_targets=comparison_targets,
@@ -252,6 +354,7 @@ def merge_goal_with_llm_hints(
     )
     return UserGoalProfile(
         latest_user_text=goal.latest_user_text,
+        conversation_text=goal.conversation_text,
         role_titles=role_titles,
         skills=skills,
         seniority=seniority,
@@ -266,18 +369,33 @@ def merge_goal_with_llm_hints(
     )
 
 
+def _clean_role_title(value: str) -> str:
+    value = re.sub(r"^\d+\+?\s+", "", value)
+    value = re.sub(r"\bpeople\s+with\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.split(r"\b(?:with|who|that|and|for|to)\b", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    value = re.sub(r"\bpositions?\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bscheme\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" .,-—")
+
+
 def extract_role_titles(text: str) -> list[str]:
+    roles: list[str] = []
+    roles.extend(re.findall(r'"([^"\n]+?)\s*[—-]\s*[^"\n]+"', text))
+
     patterns = [
         r"hiring\s+(?:a|an|for\s+a|for\s+an)?\s*([^.,;?]+)",
         r"need\s+(?:a|an)?\s*assessment\s+for\s+([^.,;?]+)",
         r"(?:this\s+is|it\s+is|it's|role\s+is|this\s+role\s+is)\s+(?:for\s+)?(?:a|an)?\s*([^.,;?]+)",
+        r"pool\s+consists\s+of\s+([^.;?]+)",
+        r"screen(?:ing)?\s+(?:\d+\s+)?([^.;?]+?)(?:\s+for\b|[.;?]|$)",
+        r"re-?skill\s+our\s+([^.;?]+)",
+        r"run\s+(?:a|an)\s+([^.;?]+?scheme)",
     ]
-    roles: list[str] = []
     for pattern in patterns:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            role = re.split(r"\b(?:with|who|that|and|for|to)\b", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
-            role = role.strip(" .")
-            if role and role.lower() not in {"assessment", "assessments"}:
+            role = _clean_role_title(match.group(1))
+            if role and role.lower() not in ROLE_STOPWORDS:
                 roles.append(role[:1].upper() + role[1:])
     return dedupe(roles)
 
@@ -287,7 +405,7 @@ def extract_skills(text: str) -> list[str]:
     for term in SKILL_TERMS:
         if re.search(rf"\b{re.escape(term)}\b", text, flags=re.IGNORECASE):
             found.append(term)
-    return found
+    return dedupe(found)
 
 
 def has_refinement_intent(text: str) -> bool:
@@ -334,6 +452,7 @@ def extract_comparison_targets(text: str) -> list[str]:
     generic_patterns = [
         r"\bbetween\s+(.+?)\s+and\s+(.+?)(?:[?.]|$)",
         r"\bcompare\s+(.+?)\s+(?:with|and|vs\.?|versus)\s+(.+?)(?:[?.]|$)",
+        r"\bis\s+(.+?)\s+different\s+from\s+(.+?)(?:[?.]|$)",
         r"\b(.+?)\s+(?:vs\.?|versus)\s+(.+?)(?:[?.]|$)",
     ]
     for pattern in generic_patterns:
@@ -393,8 +512,14 @@ def extract_focus(text: str) -> list[str]:
     lowered = text.lower()
     focus: list[str] = []
     for term, value in FOCUS_TERMS.items():
-        if term in lowered:
+        if text_contains(lowered, term):
             focus.append(value)
+    if any(text_contains(lowered, term) for term in SKILLS_FOCUS_HINTS):
+        focus.append("skills")
+    if any(text_contains(lowered, term) for term in PERSONALITY_FOCUS_HINTS):
+        focus.append("personality")
+    if any(text_contains(lowered, term) for term in SIMULATION_FOCUS_HINTS):
+        focus.append("simulation")
     if extract_skills(text) and re.search(r"\bwhat\s+(?:shl\s+)?assessments?\b", lowered):
         focus.append("skills")
     if "assess" in lowered and "skills" in lowered:
@@ -413,6 +538,9 @@ def extract_user_goal_result(
     comparison_targets = extract_comparison_targets(latest_text)
     latest_is_refinement = has_refinement_intent(latest_text)
     prior_recommendation = has_prior_recommendation(messages)
+    conversation_text = text
+    if prior_recommendation and has_confirmation_intent(latest_text):
+        conversation_text = "\n".join(message.content for message in messages)
     exclusions = extract_excluded_terms(latest_text)
     latest_roles = extract_role_titles(latest_text)
     roles = latest_roles if latest_is_refinement and latest_roles else extract_role_titles(text)
@@ -426,7 +554,14 @@ def extract_user_goal_result(
     seniority = latest_seniority if latest_is_refinement and latest_seniority else extract_seniority(text)
     focus = extract_focus(text)
     constraints = extract_constraints(text)
-    missing = compute_missing_factors(roles, seniority, focus)
+    missing = compute_missing_factors(
+        roles,
+        seniority,
+        focus,
+        skills=skills,
+        has_prior_recommendation=prior_recommendation,
+        latest_text=latest_text,
+    )
     latest_intent = determine_latest_intent(
         latest_text,
         comparison_targets=comparison_targets,
@@ -435,6 +570,7 @@ def extract_user_goal_result(
     )
     goal = UserGoalProfile(
         latest_user_text=latest_text,
+        conversation_text=conversation_text,
         role_titles=roles,
         skills=skills,
         seniority=seniority,

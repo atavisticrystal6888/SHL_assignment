@@ -8,6 +8,12 @@ from app.main import app
 def test_health_and_only_expected_public_routes_are_exposed():
     client = TestClient(app)
 
+    assert client.get("/").status_code == 200
+    assert client.get("/").json() == {
+        "service": "shl-assessment-recommender",
+        "status": "ok",
+        "endpoints": {"health": "/health", "chat": "/chat"},
+    }
     assert client.get("/health").status_code == 200
     assert client.get("/health").json() == {"status": "ok"}
     assert client.get("/docs").status_code == 404

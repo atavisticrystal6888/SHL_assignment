@@ -64,6 +64,18 @@ async def validation_exception_handler(_request: Request, _exc: RequestValidatio
     return JSONResponse(status_code=200, content=response.model_dump())
 
 
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "service": "shl-assessment-recommender",
+        "status": "ok",
+        "endpoints": {
+            "health": "/health",
+            "chat": "/chat",
+        },
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

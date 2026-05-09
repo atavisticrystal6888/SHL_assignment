@@ -42,6 +42,8 @@ Expected response:
 {"status":"ok"}
 ```
 
+If you open the base URL `/` in a browser, the service returns a small JSON descriptor identifying the app and listing `/health` and `/chat`. That root response is informational only; evaluator checks still target `/health` and `/chat`.
+
 ## 5. Test Clarification Behavior
 
 ```powershell

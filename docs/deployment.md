@@ -2,12 +2,12 @@
 
 ## Public API Surface
 
-The service is designed for a Render Web Service deployment. The public evaluator surface is intentionally limited to:
+The service is designed for a Render Web Service deployment. The evaluator-required API surface is:
 
 - `GET /health`
 - `POST /chat`
 
-Default FastAPI documentation routes are disabled, so `/docs`, `/redoc`, and `/openapi.json` return 404 in local contract tests.
+The root path `/` also returns a lightweight service descriptor so opening the base deployment URL in a browser confirms the service is live and shows the primary endpoints. Default FastAPI documentation routes remain disabled, so `/docs`, `/redoc`, and `/openapi.json` return 404 in local contract tests.
 
 ## Render Configuration
 

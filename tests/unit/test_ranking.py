@@ -158,6 +158,112 @@ def test_rank_catalog_boosts_known_aliases_to_canonical_assessment():
     assert matches[0].assessment.entity_id == "1"
 
 
+def test_rank_catalog_preserves_focus_coverage_for_full_battery_requests():
+    ability = CatalogAssessment(
+        entity_id="1",
+        name="SHL Verify Interactive G+",
+        url="https://www.shl.com/products/product-catalog/view/shl-verify-interactive-g/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="Interactive general ability assessment.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    personality = CatalogAssessment(
+        entity_id="2",
+        name="Occupational Personality Questionnaire OPQ32r",
+        url="https://www.shl.com/products/product-catalog/view/occupational-personality-questionnaire-opq32r/",
+        test_type="P",
+        categories=["Personality & Behavior"],
+        description="Measures workplace personality preferences.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    situational = CatalogAssessment(
+        entity_id="3",
+        name="Graduate Scenarios",
+        url="https://www.shl.com/products/product-catalog/view/graduate-scenarios/",
+        test_type="B",
+        categories=["Biodata & Situational Judgment"],
+        description="Situational judgment scenarios for graduate hires.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    unrelated = CatalogAssessment(
+        entity_id="4",
+        name="Cardiology and Diabetes Management (New)",
+        url="https://www.shl.com/products/product-catalog/view/cardiology-and-diabetes-management-new/",
+        test_type="K",
+        categories=["Knowledge & Skills"],
+        description="Measures cardiology and diabetes knowledge.",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([unrelated, situational, personality, ability])
+
+    matches = rank_catalog(
+        index,
+        "Graduate management trainee full battery with cognitive personality and situational judgment coverage.",
+        limit=3,
+        preferred_categories=["ability", "personality", "situational judgment"],
+        job_level_signals=["graduate"],
+    )
+
+    assert {match.assessment.entity_id for match in matches} == {"1", "2", "3"}
+
+
+def test_rank_catalog_uses_language_and_locale_for_contact_center_simulations():
+    svar_us = CatalogAssessment(
+        entity_id="1",
+        name="SVAR Spoken English (US) (New)",
+        url="https://www.shl.com/products/product-catalog/view/svar-spoken-english-us-new/",
+        test_type="K",
+        categories=["Simulations"],
+        description="Spoken English screening for US contact center calls.",
+        languages=["English (USA)"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    svar_uk = CatalogAssessment(
+        entity_id="2",
+        name="SVAR Spoken English (UK) (New)",
+        url="https://www.shl.com/products/product-catalog/view/svar-spoken-english-uk-new/",
+        test_type="K",
+        categories=["Simulations"],
+        description="Spoken English screening for UK contact center calls.",
+        languages=["English (UK)"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    generic = CatalogAssessment(
+        entity_id="3",
+        name="Contact Center Call Simulation (New)",
+        url="https://www.shl.com/products/product-catalog/view/contact-center-call-simulation-new/",
+        test_type="S",
+        categories=["Simulations"],
+        description="Customer service call simulation for contact center hiring.",
+        languages=["English (USA)", "English (UK)"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([generic, svar_uk, svar_us])
+
+    matches = rank_catalog(
+        index,
+        "High-volume contact centre screening for inbound English US calls.",
+        limit=2,
+        preferred_categories=["simulation"],
+        required_terms=["contact center", "customer service", "English", "US"],
+        language_signals=["English"],
+        locale_signal="US",
+    )
+
+    assert matches[0].assessment.entity_id == "1"
+
+
 def test_rerank_catalog_with_llm_reorders_existing_candidates_only():
     java = CatalogAssessment(
         entity_id="1",

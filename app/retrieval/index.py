@@ -9,17 +9,35 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from app.catalog.models import CatalogAssessment
 
 
+RETRIEVAL_NORMALIZATIONS = {
+    "behaviour": "behavior",
+    "centre": "center",
+    "judgement": "judgment",
+    "organisation": "organization",
+    "programme": "program",
+}
+
+
+def normalize_retrieval_text(text: str) -> str:
+    normalized = text.lower()
+    for source, target in RETRIEVAL_NORMALIZATIONS.items():
+        normalized = normalized.replace(source, target)
+    return normalized
+
+
 def catalog_document(record: CatalogAssessment) -> str:
-    return " ".join(
-        [
-            record.name,
-            record.test_type,
-            " ".join(record.categories),
-            record.description,
-            record.duration,
-            " ".join(record.job_levels),
-            " ".join(record.languages),
-        ]
+    return normalize_retrieval_text(
+        " ".join(
+            [
+                record.name,
+                record.test_type,
+                " ".join(record.categories),
+                record.description,
+                record.duration,
+                " ".join(record.job_levels),
+                " ".join(record.languages),
+            ]
+        )
     )
 
 

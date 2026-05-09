@@ -11,7 +11,7 @@ from app.catalog.repository import ASSESSMENT_ALIASES, normalize_name
 from app.conversation.extractor import UserGoalProfile, summarize_user_goal
 from app.llm.client import LLMClient
 from app.llm.prompts import build_rerank_prompt
-from app.retrieval.index import CatalogIndex
+from app.retrieval.index import CatalogIndex, normalize_retrieval_text
 
 CATEGORY_BY_FOCUS = {
     "skills": "Knowledge & Skills",
@@ -60,6 +60,15 @@ def category_boost(record: CatalogAssessment, preferred_categories: list[str]) -
     return boost
 
 
+def matches_focus(record: CatalogAssessment, focus: str) -> bool:
+    category = CATEGORY_BY_FOCUS.get(focus)
+    if category and category in record.categories:
+        return True
+    if focus == "personality" and record.test_type == "P":
+        return True
+    return False
+
+
 def required_terms_boost(record: CatalogAssessment, required_terms: list[str]) -> float:
     boost = 0.0
     name_haystack = normalize_name(record.name)
@@ -73,6 +82,34 @@ def required_terms_boost(record: CatalogAssessment, required_terms: list[str]) -
         elif normalized_term in content_haystack:
             boost += 0.4
     return boost
+
+
+def language_boost(record: CatalogAssessment, language_signals: list[str], locale_signal: str | None) -> float:
+    boost = 0.0
+    haystack = normalize_name(" ".join(record.languages + [record.name, record.description]))
+    for language in language_signals:
+        normalized_language = normalize_name(language)
+        if normalized_language and normalized_language in haystack:
+            boost += 0.4
+    if locale_signal:
+        locale_lookup = {
+            "US": ["us", "usa", "american"],
+            "UK": ["uk", "british"],
+            "Australian": ["australia", "australian"],
+            "Indian": ["india", "indian"],
+            "Canada": ["canada", "canadian"],
+        }
+        if any(token in haystack for token in locale_lookup.get(locale_signal, [normalize_name(locale_signal)])):
+            boost += 0.7
+    return boost
+
+
+def focus_penalty(record: CatalogAssessment, preferred_categories: list[str]) -> float:
+    if not preferred_categories:
+        return 0.0
+    if any(matches_focus(record, focus) for focus in preferred_categories):
+        return 0.0
+    return -0.35 if len(preferred_categories) > 1 else -0.15
 
 
 def job_level_boost(record: CatalogAssessment, job_level_signals: list[str]) -> float:
@@ -113,6 +150,32 @@ def alias_reference_boost(record: CatalogAssessment, query: str) -> float:
     return 0.0
 
 
+def select_focus_coverage(matches: list[CatalogMatch], preferred_categories: list[str], *, limit: int) -> list[CatalogMatch]:
+    focuses = list(dict.fromkeys(focus for focus in preferred_categories if focus in CATEGORY_BY_FOCUS))
+    if len(focuses) < 2:
+        return matches[:limit]
+
+    selected: list[CatalogMatch] = []
+    seen: set[str] = set()
+    for focus in focuses:
+        for match in matches:
+            if match.assessment.entity_id in seen:
+                continue
+            if matches_focus(match.assessment, focus):
+                selected.append(match)
+                seen.add(match.assessment.entity_id)
+                break
+
+    for match in matches:
+        if match.assessment.entity_id in seen:
+            continue
+        selected.append(match)
+        seen.add(match.assessment.entity_id)
+        if len(selected) >= limit:
+            break
+    return selected[:limit]
+
+
 def rank_catalog(
     index: CatalogIndex,
     query: str,
@@ -122,15 +185,18 @@ def rank_catalog(
     preferred_categories: list[str] | None = None,
     required_terms: list[str] | None = None,
     job_level_signals: list[str] | None = None,
+    language_signals: list[str] | None = None,
+    locale_signal: str | None = None,
     excluded_terms: list[str] | None = None,
     constraints: list[str] | None = None,
 ) -> list[CatalogMatch]:
-    query = query.strip()
+    query = normalize_retrieval_text(query.strip())
     if not query or not index.records:
         return []
     preferred_categories = preferred_categories or []
     required_terms = required_terms or []
     job_level_signals = job_level_signals or []
+    language_signals = language_signals or []
     excluded_terms = excluded_terms or []
     constraints = constraints or []
     max_duration = max_duration_from_constraints(constraints)
@@ -148,6 +214,8 @@ def rank_catalog(
         total_score += category_boost(record, preferred_categories)
         total_score += required_terms_boost(record, required_terms)
         total_score += job_level_boost(record, job_level_signals)
+        total_score += language_boost(record, language_signals, locale_signal)
+        total_score += focus_penalty(record, preferred_categories)
         total_score += query_reference_boost(record, query)
         total_score += alias_reference_boost(record, query)
         if "prefer_short" in constraints and record.duration_minutes is not None:
@@ -167,7 +235,7 @@ def rank_catalog(
             )
         )
     matches.sort(key=lambda match: (-match.score, match.assessment.name.lower()))
-    return matches[:limit]
+    return select_focus_coverage(matches, preferred_categories, limit=limit)
 
 
 def render_rerank_candidate(match: CatalogMatch) -> str:
@@ -186,17 +254,21 @@ def rerank_catalog_with_llm_result(
     llm_client: LLMClient,
     *,
     limit: int | None = None,
+    llm_timeout_seconds: float | None = None,
 ) -> RerankResult:
     if not matches or not llm_client.enabled:
         status = "no_candidates" if not matches else "llm_disabled"
         result_matches = matches[:limit] if limit is not None else matches
         return RerankResult(matches=result_matches, llm_status=status)
+    if llm_timeout_seconds is not None and llm_timeout_seconds <= 0:
+        result_matches = matches[:limit] if limit is not None else matches
+        return RerankResult(matches=result_matches, llm_status="skipped_deadline")
 
     prompt = build_rerank_prompt(
         summarize_user_goal(goal),
         "\n".join(render_rerank_candidate(match) for match in matches),
     )
-    llm_result = llm_client.complete_json(prompt)
+    llm_result = llm_client.complete_json(prompt, timeout_seconds=llm_timeout_seconds)
     if llm_result.payload is None:
         result_matches = matches[:limit] if limit is not None else matches
         return RerankResult(matches=result_matches, llm_status=llm_result.reason)
@@ -234,5 +306,12 @@ def rerank_catalog_with_llm(
     llm_client: LLMClient,
     *,
     limit: int | None = None,
+    llm_timeout_seconds: float | None = None,
 ) -> list[CatalogMatch]:
-    return rerank_catalog_with_llm_result(matches, goal, llm_client, limit=limit).matches
+    return rerank_catalog_with_llm_result(
+        matches,
+        goal,
+        llm_client,
+        limit=limit,
+        llm_timeout_seconds=llm_timeout_seconds,
+    ).matches

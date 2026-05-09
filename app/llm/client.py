@@ -109,18 +109,25 @@ class LLMClient:
             return text.strip()
         return ""
 
-    def _client(self) -> httpx.Client:
+    def _client(self, timeout_seconds: float | None = None) -> httpx.Client:
         return httpx.Client(
-            timeout=self.timeout_seconds,
+            timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
             transport=self.transport,
             verify=self.ssl_context,
         )
 
-    def complete(self, prompt: str, fallback: str, *, system_prompt: str = SYSTEM_PROMPT) -> LLMResult:
+    def complete(
+        self,
+        prompt: str,
+        fallback: str,
+        *,
+        system_prompt: str = SYSTEM_PROMPT,
+        timeout_seconds: float | None = None,
+    ) -> LLMResult:
         if not self.enabled:
             return LLMResult(text=fallback, used_llm=False, reason="llm_disabled")
         try:
-            with self._client() as client:
+            with self._client(timeout_seconds=timeout_seconds) as client:
                 response = client.post(
                     self.chat_completions_url,
                     headers=self._headers(),
@@ -139,8 +146,13 @@ class LLMClient:
             return LLMResult(text=fallback, used_llm=False, reason="llm_response_empty")
         return LLMResult(text=text, used_llm=True, reason="llm_success")
 
-    def complete_json(self, prompt: str) -> LLMJSONResult:
-        result = self.complete(prompt, "", system_prompt=JSON_SYSTEM_PROMPT)
+    def complete_json(self, prompt: str, *, timeout_seconds: float | None = None) -> LLMJSONResult:
+        result = self.complete(
+            prompt,
+            "",
+            system_prompt=JSON_SYSTEM_PROMPT,
+            timeout_seconds=timeout_seconds,
+        )
         if not result.used_llm:
             return LLMJSONResult(payload=None, used_llm=False, reason=result.reason)
         text = result.text.strip()

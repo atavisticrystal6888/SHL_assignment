@@ -51,6 +51,9 @@ REFINEMENT_TERMS = (
     "instead",
     "correction",
     "update",
+    "switch",
+    "pivot",
+    "make it",
 )
 CONFIRMATION_TERMS = (
     "confirmed",
@@ -94,6 +97,39 @@ KNOWN_COMPARISON_REFERENCES = [
     ),
     ("Dependability and Safety Instrument (DSI)", ("dependability and safety instrument", "dsi")),
 ]
+LANGUAGE_TERMS = {
+    "english": "English",
+    "spanish": "Spanish",
+    "french": "French",
+    "german": "German",
+    "portuguese": "Portuguese",
+    "italian": "Italian",
+    "arabic": "Arabic",
+}
+LOCALE_TERMS = {
+    "usa": "US",
+    "us": "US",
+    "american": "US",
+    "united states": "US",
+    "uk": "UK",
+    "british": "UK",
+    "united kingdom": "UK",
+    "australian": "Australian",
+    "australia": "Australian",
+    "indian": "Indian",
+    "india": "Indian",
+    "canadian": "Canada",
+    "canada": "Canada",
+}
+LANGUAGE_REQUIRED_HINTS = (
+    "call simulation",
+    "contact center",
+    "contact centre",
+    "inbound calls",
+    "phone simulation",
+    "spoken english",
+    "spoken language",
+)
 SENIORITY_TERMS = {
     "entry": "entry-level",
     "graduate": "graduate",
@@ -181,6 +217,8 @@ class UserGoalProfile:
     conversation_text: str = ""
     role_titles: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
+    languages: list[str] = field(default_factory=list)
+    locale: str | None = None
     seniority: str | None = None
     assessment_focus: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
@@ -251,6 +289,15 @@ def normalize_seniority_hint(value: Any) -> str | None:
     return SENIORITY_TERMS.get(candidate, value.strip())
 
 
+def normalize_locale_hint(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = " ".join(value.split()).lower()
+    if not candidate:
+        return None
+    return LOCALE_TERMS.get(candidate, value.strip())
+
+
 def has_confirmation_intent(text: str) -> bool:
     lowered = " ".join(text.lower().split())
     return any(term in lowered for term in CONFIRMATION_TERMS)
@@ -267,21 +314,36 @@ def compute_missing_factors(
     assessment_focus: list[str],
     *,
     skills: list[str] | None = None,
+    languages: list[str] | None = None,
+    locale: str | None = None,
+    conversation_text: str = "",
     has_prior_recommendation: bool = False,
     latest_text: str = "",
 ) -> list[str]:
     if has_prior_recommendation and has_confirmation_intent(latest_text):
         return []
-    if role_titles and assessment_focus:
+    languages = languages or []
+    lowered_conversation = conversation_text.lower()
+    requires_language = "simulation" in assessment_focus or any(
+        hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS
+    )
+    requires_locale = requires_language and any(language == "English" for language in languages) and any(
+        hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS
+    )
+    if role_titles and assessment_focus and not (requires_language and not languages) and not (requires_locale and not locale):
         return []
 
     missing: list[str] = []
     if not role_titles:
         missing.append("role")
-    if seniority is None:
+    if seniority is None and (not role_titles or not assessment_focus):
         missing.append("seniority")
     if not assessment_focus:
         missing.append("assessment_focus")
+    if requires_language and not languages:
+        missing.append("language")
+    if requires_locale and not locale:
+        missing.append("locale")
     return missing
 
 
@@ -301,6 +363,15 @@ def determine_latest_intent(
     return "clarify" if missing_decision_factors else "recommend"
 
 
+def refinement_replaces_prior_context(
+    latest_text: str,
+    *,
+    latest_roles: list[str],
+    has_prior_recommendation: bool,
+) -> bool:
+    return has_prior_recommendation and has_refinement_intent(latest_text) and bool(latest_roles)
+
+
 def summarize_user_goal(goal: UserGoalProfile) -> str:
     lines = [f"Latest user request: {goal.latest_user_text}"]
     if goal.conversation_text:
@@ -309,6 +380,10 @@ def summarize_user_goal(goal: UserGoalProfile) -> str:
         lines.append(f"Role titles: {', '.join(goal.role_titles)}")
     if goal.skills:
         lines.append(f"Skills: {', '.join(goal.skills)}")
+    if goal.languages:
+        lines.append(f"Languages: {', '.join(goal.languages)}")
+    if goal.locale:
+        lines.append(f"Locale: {goal.locale}")
     if goal.seniority:
         lines.append(f"Seniority: {goal.seniority}")
     if goal.assessment_focus:
@@ -332,8 +407,10 @@ def merge_goal_with_llm_hints(
 ) -> UserGoalProfile:
     role_titles = dedupe(goal.role_titles + normalize_string_list(payload.get("role_titles")))
     skills = dedupe(goal.skills + normalize_string_list(payload.get("skills")))
+    languages = dedupe(goal.languages + normalize_string_list(payload.get("languages")))
     excluded_lookup = {term.lower() for term in goal.excluded_terms}
     skills = [skill for skill in skills if skill.lower() not in excluded_lookup]
+    locale = goal.locale or normalize_locale_hint(payload.get("locale"))
     seniority = goal.seniority or normalize_seniority_hint(payload.get("seniority"))
     assessment_focus = dedupe(goal.assessment_focus + normalize_focus_hints(payload.get("assessment_focus")))
     constraints = dedupe(goal.constraints + normalize_string_list(payload.get("constraints")))
@@ -343,6 +420,9 @@ def merge_goal_with_llm_hints(
         seniority,
         assessment_focus,
         skills=skills,
+        languages=languages,
+        locale=locale,
+        conversation_text=goal.conversation_text,
         has_prior_recommendation=prior_recommendation,
         latest_text=goal.latest_user_text,
     )
@@ -357,6 +437,8 @@ def merge_goal_with_llm_hints(
         conversation_text=goal.conversation_text,
         role_titles=role_titles,
         skills=skills,
+        languages=languages,
+        locale=locale,
         seniority=seniority,
         assessment_focus=assessment_focus,
         constraints=constraints,
@@ -387,6 +469,8 @@ def extract_role_titles(text: str) -> list[str]:
         r"hiring\s+(?:a|an|for\s+a|for\s+an)?\s*([^.,;?]+)",
         r"need\s+(?:a|an)?\s*assessment\s+for\s+([^.,;?]+)",
         r"(?:this\s+is|it\s+is|it's|role\s+is|this\s+role\s+is)\s+(?:for\s+)?(?:a|an)?\s*([^.,;?]+)",
+        r"make\s+it\s+(?:for\s+)?(?:a|an)?\s*([^.,;?]+)",
+        r"(?:switch|pivot)\s+(?:to|toward)\s+(?:a|an)?\s*([^.,;?]+)",
         r"pool\s+consists\s+of\s+([^.;?]+)",
         r"screen(?:ing)?\s+(?:\d+\s+)?([^.;?]+?)(?:\s+for\b|[.;?]|$)",
         r"re-?skill\s+our\s+([^.;?]+)",
@@ -406,6 +490,23 @@ def extract_skills(text: str) -> list[str]:
         if re.search(rf"\b{re.escape(term)}\b", text, flags=re.IGNORECASE):
             found.append(term)
     return dedupe(found)
+
+
+def extract_languages(text: str) -> list[str]:
+    found: list[str] = []
+    lowered = text.lower()
+    for term, canonical in LANGUAGE_TERMS.items():
+        if text_contains(lowered, term):
+            found.append(canonical)
+    return dedupe(found)
+
+
+def extract_locale(text: str) -> str | None:
+    lowered = text.lower()
+    for term, canonical in sorted(LOCALE_TERMS.items(), key=lambda item: len(item[0]), reverse=True):
+        if text_contains(lowered, term):
+            return canonical
+    return None
 
 
 def has_refinement_intent(text: str) -> bool:
@@ -532,33 +633,49 @@ def extract_user_goal_result(
     *,
     llm_client: LLMClient | None = None,
     enable_llm: bool = False,
+    llm_timeout_seconds: float | None = None,
 ) -> GoalExtractionResult:
     text = user_text(messages)
     latest_text = latest_user_message(messages)
     comparison_targets = extract_comparison_targets(latest_text)
     latest_is_refinement = has_refinement_intent(latest_text)
     prior_recommendation = has_prior_recommendation(messages)
-    conversation_text = text
+    latest_roles = extract_role_titles(latest_text)
+    replace_prior_context = refinement_replaces_prior_context(
+        latest_text,
+        latest_roles=latest_roles,
+        has_prior_recommendation=prior_recommendation,
+    )
+    base_text = latest_text if replace_prior_context else text
+    conversation_text = base_text
     if prior_recommendation and has_confirmation_intent(latest_text):
         conversation_text = "\n".join(message.content for message in messages)
     exclusions = extract_excluded_terms(latest_text)
-    latest_roles = extract_role_titles(latest_text)
-    roles = latest_roles if latest_is_refinement and latest_roles else extract_role_titles(text)
-    skills = extract_skills(text)
+    roles = latest_roles if replace_prior_context else extract_role_titles(text)
+    skills = extract_skills(base_text)
     latest_skills = extract_skills(latest_text)
-    if latest_is_refinement and latest_skills:
+    languages = extract_languages(base_text)
+    latest_languages = extract_languages(latest_text)
+    if latest_is_refinement and not replace_prior_context and latest_languages:
+        languages = dedupe(languages + latest_languages)
+    latest_locale = extract_locale(latest_text)
+    locale = latest_locale if latest_is_refinement and latest_locale else extract_locale(base_text)
+    if latest_is_refinement and not replace_prior_context and latest_skills:
         skills.extend(latest_skills)
     excluded_lookup = {term.lower() for term in exclusions}
     skills = [skill for skill in dedupe(skills) if skill.lower() not in excluded_lookup]
     latest_seniority = extract_seniority(latest_text)
-    seniority = latest_seniority if latest_is_refinement and latest_seniority else extract_seniority(text)
-    focus = extract_focus(text)
-    constraints = extract_constraints(text)
+    seniority = latest_seniority if latest_is_refinement and latest_seniority else extract_seniority(base_text)
+    focus = extract_focus(base_text)
+    constraints = extract_constraints(base_text)
     missing = compute_missing_factors(
         roles,
         seniority,
         focus,
         skills=skills,
+        languages=languages,
+        locale=locale,
+        conversation_text=conversation_text,
         has_prior_recommendation=prior_recommendation,
         latest_text=latest_text,
     )
@@ -573,6 +690,8 @@ def extract_user_goal_result(
         conversation_text=conversation_text,
         role_titles=roles,
         skills=skills,
+        languages=languages,
+        locale=locale,
         seniority=seniority,
         assessment_focus=focus,
         constraints=constraints,
@@ -586,7 +705,14 @@ def extract_user_goal_result(
     if not enable_llm or llm_client is None or not llm_client.enabled:
         status = "disabled_by_config" if not enable_llm else "llm_disabled"
         return GoalExtractionResult(goal=goal, llm_status=status)
-    llm_result = llm_client.complete_json(build_intent_extraction_prompt(messages, summarize_user_goal(goal)))
+    if replace_prior_context:
+        return GoalExtractionResult(goal=goal, llm_status="skipped_refinement_reset")
+    if llm_timeout_seconds is not None and llm_timeout_seconds <= 0 and enable_llm and llm_client is not None and llm_client.enabled:
+        return GoalExtractionResult(goal=goal, llm_status="skipped_deadline")
+    llm_result = llm_client.complete_json(
+        build_intent_extraction_prompt(messages, summarize_user_goal(goal)),
+        timeout_seconds=llm_timeout_seconds,
+    )
     if llm_result.payload is None:
         return GoalExtractionResult(goal=goal, llm_status=llm_result.reason)
     merged_goal = merge_goal_with_llm_hints(goal, llm_result.payload, prior_recommendation=prior_recommendation)
@@ -598,9 +724,11 @@ def extract_user_goal(
     *,
     llm_client: LLMClient | None = None,
     enable_llm: bool = False,
+    llm_timeout_seconds: float | None = None,
 ) -> UserGoalProfile:
     return extract_user_goal_result(
         messages,
         llm_client=llm_client,
         enable_llm=enable_llm,
+        llm_timeout_seconds=llm_timeout_seconds,
     ).goal

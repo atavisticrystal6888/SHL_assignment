@@ -21,4 +21,4 @@ def test_complete_java_developer_need_returns_catalog_backed_skill_assessment():
     names = [item["name"].lower() for item in body["recommendations"]]
     assert body["recommendations"]
     assert any("java" in name for name in names)
-    assert body["end_of_conversation"] is False
+    assert body["end_of_conversation"] is True

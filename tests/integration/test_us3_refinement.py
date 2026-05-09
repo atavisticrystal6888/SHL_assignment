@@ -51,3 +51,34 @@ def test_drop_opq_removes_opq_from_revised_shortlist():
     assert body["recommendations"]
     assert all("opq" not in item["name"].lower() for item in body["recommendations"])
     assert "updated" in body["reply"].lower()
+
+
+def test_role_pivot_replaces_previous_shortlist_context():
+    client = TestClient(app)
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hiring a mid-level Java developer. Assess Java technical skills.",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Shortlist includes Core Java (Advanced Level) and Spring.",
+                },
+                {
+                    "role": "user",
+                    "content": "Actually switch to a senior sales manager role and assess sales leadership and personality fit instead.",
+                },
+            ]
+        },
+    )
+
+    body = response.json()
+    names = [item["name"].lower() for item in body["recommendations"]]
+
+    assert body["recommendations"]
+    assert any("sales" in name or "opq" in name for name in names)
+    assert all("java" not in name and "spring" not in name and "sql" not in name for name in names)
+    assert "updated" in body["reply"].lower()

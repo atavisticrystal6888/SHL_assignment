@@ -28,3 +28,11 @@ def test_refuses_non_shl_product_recommendation():
 
     assert body["recommendations"] == []
     assert "shl" in body["reply"].lower()
+
+
+def test_refuses_job_description_authoring_request():
+    body = post_message("Write a job description for a senior data engineer.")
+
+    assert body["recommendations"] == []
+    assert "shl" in body["reply"].lower()
+    assert "job descriptions" in body["reply"].lower() or "hiring" in body["reply"].lower()

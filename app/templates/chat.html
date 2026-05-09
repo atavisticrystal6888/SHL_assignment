@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Workspace</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f7f4ee;
+        --panel: rgba(255, 255, 255, 0.88);
+        --ink: #1f2528;
+        --muted: #68757d;
+        --accent: #b45309;
+        --accent-soft: rgba(180, 83, 9, 0.1);
+        --assistant: #f0f7f6;
+        --user: #1f2528;
+        --user-ink: #fff8ef;
+        --line: rgba(31, 37, 40, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Aptos, "Segoe UI Variable", "Trebuchet MS", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(180, 83, 9, 0.12), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 24%),
+          linear-gradient(180deg, #fdf8f1 0%, var(--page) 100%);
+      }
+
+      .shell {
+        width: min(1100px, calc(100% - 1rem));
+        margin: 0 auto;
+        padding: 1rem 0 1.5rem;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 1rem;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 24px 48px rgba(31, 37, 40, 0.08);
+      }
+
+      .sidebar {
+        padding: 1.4rem;
+      }
+
+      .eyebrow {
+        font-size: 0.74rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 0.8rem 0;
+        font-size: 2.2rem;
+        line-height: 1;
+      }
+
+      .sidebar p,
+      .hint,
+      .muted {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .shortcut {
+        margin-top: 1rem;
+        padding: 0.9rem 1rem;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .shortcut button {
+        width: 100%;
+        margin-top: 0.7rem;
+        padding: 0.75rem 0.9rem;
+        border: 0;
+        border-radius: 14px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .chat-panel {
+        display: grid;
+        grid-template-rows: auto minmax(420px, 1fr) auto;
+        min-height: 78vh;
+      }
+
+      .chat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.1rem 1.2rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status {
+        padding: 0.42rem 0.72rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      #messages {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1.2rem;
+        overflow: auto;
+      }
+
+      .message {
+        max-width: min(720px, 90%);
+        padding: 0.95rem 1rem;
+        border-radius: 22px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: var(--user);
+        color: var(--user-ink);
+        border-bottom-right-radius: 8px;
+      }
+
+      .message.assistant {
+        align-self: flex-start;
+        background: var(--assistant);
+        border-bottom-left-radius: 8px;
+      }
+
+      .recommendations {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+
+      .recommendation {
+        padding: 0.85rem 0.95rem;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid rgba(31, 37, 40, 0.08);
+      }
+
+      .recommendation a {
+        color: #0f766e;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      form {
+        display: grid;
+        gap: 0.8rem;
+        padding: 1rem 1.2rem 1.2rem;
+        border-top: 1px solid var(--line);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        resize: vertical;
+        padding: 0.9rem 1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(31, 37, 40, 0.14);
+        font: inherit;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .actions button,
+      .actions a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 132px;
+        padding: 0.8rem 1rem;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .send {
+        border: 0;
+        background: linear-gradient(135deg, #b45309 0%, #7c2d12 100%);
+        color: white;
+        cursor: pointer;
+      }
+
+      .back {
+        color: var(--ink);
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.76);
+      }
+
+      @media (max-width: 880px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .chat-panel {
+          min-height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="layout">
+        <aside class="panel sidebar">
+          <div class="eyebrow">Interactive Client</div>
+          <h1>Chat Workspace</h1>
+          <p>Send hiring prompts to the existing backend and inspect replies without leaving the browser.</p>
+          <div class="shortcut">
+            <div class="muted">Suggested prompt</div>
+            <button type="button" data-prompt="I am hiring a mid-level Java developer and want to assess technical skills.">
+              Mid-level Java developer
+            </button>
+          </div>
+          <div class="shortcut">
+            <div class="muted">Another prompt</div>
+            <button type="button" data-prompt="I need a shortlist for graduate management trainees with cognitive, personality, and situational judgment coverage.">
+              Graduate management trainee
+            </button>
+          </div>
+        </aside>
+        <section class="panel chat-panel">
+          <header class="chat-header">
+            <strong>SHL Recommender Session</strong>
+            <span class="status" id="session-status">Ready</span>
+          </header>
+          <div id="messages">
+            <div class="message assistant">
+              Describe the role, seniority, and what you want to assess. This page sends your request directly to POST /chat.
+            </div>
+          </div>
+          <form id="chat-form">
+            <label for="prompt" class="hint">Message</label>
+            <textarea id="prompt" name="prompt" placeholder="Example: I need a Java developer assessment focused on technical skills and problem solving."></textarea>
+            <div class="actions">
+              <a class="back" href="/">Back</a>
+              <button class="send" type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+    <script>
+      const form = document.getElementById("chat-form");
+      const promptField = document.getElementById("prompt");
+      const messagesElement = document.getElementById("messages");
+      const statusElement = document.getElementById("session-status");
+      const conversation = [];
+
+      function appendMessage(role, text, recommendations = []) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `message ${role}`;
+        wrapper.textContent = text;
+
+        if (recommendations.length > 0) {
+          const list = document.createElement("div");
+          list.className = "recommendations";
+          recommendations.forEach((item) => {
+            const card = document.createElement("div");
+            card.className = "recommendation";
+            card.innerHTML = `<strong>${item.name}</strong><div>${item.test_type}</div><a href="${item.url}" target="_blank" rel="noreferrer">Open assessment</a>`;
+            list.appendChild(card);
+          });
+          wrapper.appendChild(list);
+        }
+
+        messagesElement.appendChild(wrapper);
+        messagesElement.scrollTop = messagesElement.scrollHeight;
+      }
+
+      async function sendMessage(text) {
+        conversation.push({ role: "user", content: text });
+        appendMessage("user", text);
+        statusElement.textContent = "Waiting for response";
+
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: conversation }),
+          });
+          const payload = await response.json();
+          conversation.push({ role: "assistant", content: payload.reply });
+          appendMessage("assistant", payload.reply, payload.recommendations || []);
+          statusElement.textContent = payload.end_of_conversation ? "Conversation complete" : "Ready";
+        } catch (error) {
+          appendMessage("assistant", `Request failed: ${String(error)}`);
+          statusElement.textContent = "Error";
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const text = promptField.value.trim();
+        if (!text) {
+          return;
+        }
+        promptField.value = "";
+        await sendMessage(text);
+      });
+
+      document.querySelectorAll("[data-prompt]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const text = button.getAttribute("data-prompt") || "";
+          promptField.value = text;
+          await sendMessage(text);
+        });
+      });
+    </script>
+  </body>
+</html>

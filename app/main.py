@@ -10,9 +10,7 @@ from fastapi import Body, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.chat_page_router import router as chat_page_router
 from app.api.health_router import router as health_router
-from app.api.landing_router import router as landing_router
 from app.api.schemas import ChatResponse
 from app.api.validators import malformed_chat_response, parse_chat_request, validate_chat_response, validate_refusal_response
 from app.catalog.repository import ASSESSMENT_ALIASES, CatalogRepository, normalize_name
@@ -33,10 +31,6 @@ from app.retrieval.query import build_retrieval_query
 from app.retrieval.ranker import CatalogMatch, rank_catalog, rerank_catalog_with_llm_result
 from app.settings import settings
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-app.include_router(landing_router)
-app.include_router(health_router)
-app.include_router(chat_page_router)
 DEBUG_HEADER = "x-debug-llm"
 REQUEST_BUDGET_SECONDS = 27.5
 LLM_INTENT_RESERVE_SECONDS = 8.0
@@ -164,13 +158,11 @@ def carry_forward_matches(goal, prior_matches: list[CatalogMatch], matches: list
     return merged
 
 
-@app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, _exc: RequestValidationError) -> JSONResponse:
     response = malformed_chat_response()
     return JSONResponse(status_code=200, content=response.model_dump())
 
 
-@app.post("/chat", response_model=ChatResponse)
 def chat(http_request: Request, http_response: Response, payload: Any = Body(default=None)) -> ChatResponse:
     chat_request, malformed = parse_chat_request(payload)
     if malformed is not None:
@@ -269,3 +261,14 @@ def chat(http_request: Request, http_response: Response, payload: Any = Body(def
         timeout_seconds=rewrite_timeout if rewrite_timeout is not None else 0.0,
     )
     return validate_chat_response(response, recommendations_allowed=False)
+
+
+def create_submission_app() -> FastAPI:
+    application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    application.include_router(health_router)
+    application.add_exception_handler(RequestValidationError, validation_exception_handler)
+    application.post("/chat", response_model=ChatResponse)(chat)
+    return application
+
+
+app = create_submission_app()

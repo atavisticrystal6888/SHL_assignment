@@ -1,11 +1,9 @@
-"""Browser-aware health route."""
+"""Submission health route."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse
-
-from app.api.page_support import template_response, wants_html
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
@@ -15,9 +13,5 @@ def health_payload() -> dict[str, str]:
 
 
 @router.get("/health", include_in_schema=False, response_model=None)
-def health(request: Request) -> FileResponse | JSONResponse:
-    if request.query_params.get("format", "").lower() == "json":
-        return JSONResponse(content=health_payload())
-    if wants_html(request):
-        return template_response("health.html")
+def health() -> JSONResponse:
     return JSONResponse(content=health_payload())

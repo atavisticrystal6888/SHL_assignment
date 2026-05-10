@@ -88,9 +88,8 @@ def shortlist_anchor_text(matches: list[CatalogMatch], *, limit: int = 5) -> str
     return "; ".join(names) if names else "no matching assessments"
 
 
-def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:
-    role = goal.role_titles[0] if goal.role_titles else "the role"
-    recommendations = [
+def recommendation_payload(matches: list[CatalogMatch]) -> list[dict[str, str]]:
+    return [
         {
             "name": match.assessment.name,
             "url": match.assessment.url,
@@ -98,9 +97,16 @@ def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -
         }
         for match in matches[:10]
     ]
-    # End the conversation when the user supplied a complete context
-    # (role + seniority + focus all present with no missing factors).
-    end = not goal.missing_decision_factors
+
+
+def should_end_conversation(goal: UserGoalProfile) -> bool:
+    return not goal.missing_decision_factors and has_confirmation_intent(goal.latest_user_text)
+
+
+def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:
+    role = goal.role_titles[0] if goal.role_titles else "the role"
+    recommendations = recommendation_payload(matches)
+    end = should_end_conversation(goal)
     reply = (
         f"Here is a catalog-grounded SHL shortlist for {role}, prioritized from the available catalog matches: "
         f"{shortlist_anchor_text(matches)}."
@@ -109,27 +115,26 @@ def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -
 
 
 def render_refinement(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:
-    recommendations = [
-        {
-            "name": match.assessment.name,
-            "url": match.assessment.url,
-            "test_type": match.assessment.test_type,
-        }
-        for match in matches[:10]
-    ]
+    recommendations = recommendation_payload(matches)
     reply = (
         "Updated the SHL shortlist using the latest changes while keeping the remaining catalog-grounded context: "
         f"{shortlist_anchor_text(matches)}."
     )
     if goal.excluded_terms:
         reply += f" Removed: {', '.join(goal.excluded_terms)}."
-    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=True)
+    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=should_end_conversation(goal))
 
 
-def render_comparison(goal: UserGoalProfile, resolutions: list[CatalogResolution]) -> ChatResponse:
+def render_comparison(
+    goal: UserGoalProfile,
+    resolutions: list[CatalogResolution],
+    *,
+    prior_matches: list[CatalogMatch] | None = None,
+) -> ChatResponse:
+    preserved_recommendations = recommendation_payload(prior_matches or [])
     if len(goal.comparison_targets) < 2:
         reply = "Which SHL catalog assessments should I compare? Please provide two assessment names or common aliases."
-        return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
+        return ChatResponse(reply=reply, recommendations=preserved_recommendations, end_of_conversation=False)
 
     ambiguous = [resolution for resolution in resolutions if resolution.status == "ambiguous"]
     if ambiguous:
@@ -138,7 +143,7 @@ def render_comparison(goal: UserGoalProfile, resolutions: list[CatalogResolution
             candidates = ", ".join(record.name for record in resolution.matches[:5])
             parts.append(f"'{resolution.query}' could mean multiple catalog records: {candidates}")
         reply = "I found multiple SHL catalog matches. " + " ".join(parts) + " Which exact assessment should I compare?"
-        return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
+        return ChatResponse(reply=reply, recommendations=preserved_recommendations, end_of_conversation=False)
 
     not_found = [resolution.query for resolution in resolutions if resolution.status == "not_found"]
     resolved_records = [resolution.record for resolution in resolutions if resolution.record is not None]
@@ -146,15 +151,15 @@ def render_comparison(goal: UserGoalProfile, resolutions: list[CatalogResolution
         found = ", ".join(record.name for record in resolved_records) if resolved_records else "no matching catalog assessment"
         missing = ", ".join(not_found)
         reply = f"I can compare only SHL catalog assessments. I found {found}, but could not find {missing} in the catalog."
-        return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
+        return ChatResponse(reply=reply, recommendations=preserved_recommendations, end_of_conversation=False)
 
     if len(resolved_records) < 2:
         reply = "I need two distinct SHL catalog assessments to compare. Which second assessment should I use?"
-        return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
+        return ChatResponse(reply=reply, recommendations=preserved_recommendations, end_of_conversation=False)
 
     facts = " ".join(render_catalog_facts(record) for record in resolved_records[:3])
     reply = f"Catalog-grounded comparison: {facts} These differences come from stored SHL catalog fields, not inferred product claims."
-    return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
+    return ChatResponse(reply=reply, recommendations=preserved_recommendations, end_of_conversation=False)
 
 
 def render_refusal(decision: AgentDecision) -> ChatResponse:

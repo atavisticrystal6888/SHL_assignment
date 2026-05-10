@@ -53,6 +53,33 @@ def test_drop_opq_removes_opq_from_revised_shortlist():
     assert "updated" in body["reply"].lower()
 
 
+def test_refinement_keeps_prior_shortlist_items_when_adding_new_signal():
+    client = TestClient(app)
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hiring graduate trainees for a full battery.",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Here is a catalog-grounded SHL shortlist for graduate trainees, prioritized from the available catalog matches: SHL Verify Interactive G+; Graduate Scenarios.",
+                },
+                {"role": "user", "content": "Actually add personality tests too."},
+            ]
+        },
+    )
+
+    body = response.json()
+    names = {item["name"] for item in body["recommendations"]}
+
+    assert "SHL Verify Interactive G+" in names
+    assert "Graduate Scenarios" in names
+    assert any(item["test_type"] == "P" or "opq" in item["name"].lower() for item in body["recommendations"])
+
+
 def test_role_pivot_replaces_previous_shortlist_context():
     client = TestClient(app)
     response = client.post(

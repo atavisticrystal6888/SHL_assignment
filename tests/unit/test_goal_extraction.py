@@ -1,7 +1,7 @@
 import httpx
 
 from app.api.schemas import ConversationMessage
-from app.conversation.extractor import extract_comparison_targets, extract_user_goal, extract_user_goal_result
+from app.conversation.extractor import extract_comparison_targets, extract_prior_shortlist_hints, extract_user_goal, extract_user_goal_result
 from app.llm.client import LLMClient
 
 
@@ -203,6 +203,7 @@ def test_screening_prompt_extracts_role_and_skills_focus():
 
     assert "Admin assistants" in goal.role_titles
     assert "skills" in goal.assessment_focus
+    assert "seniority" not in goal.missing_decision_factors
 
 
 def test_comparison_targets_support_different_from_questions():
@@ -224,6 +225,46 @@ def test_refinement_intent_wins_over_confirmation_language():
 
     assert "OPQ" in goal.excluded_terms
     assert goal.latest_intent == "refine"
+
+
+def test_prior_shortlist_hints_are_recovered_from_assistant_messages():
+    hints = extract_prior_shortlist_hints(
+        [
+            ConversationMessage(
+                role="assistant",
+                content="Here is a catalog-grounded SHL shortlist for graduate hires, prioritized from the available catalog matches: SHL Verify Interactive G+; Occupational Personality Questionnaire OPQ32r; Graduate Scenarios.",
+            ),
+        ]
+    )
+
+    assert hints == [
+        "SHL Verify Interactive G+",
+        "Occupational Personality Questionnaire OPQ32r",
+        "Graduate Scenarios",
+    ]
+
+
+def test_goal_captures_prior_shortlist_hints_for_follow_up_compare():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(role="user", content="Hiring contact centre agents for US calls."),
+            ConversationMessage(
+                role="assistant",
+                content="Here is a catalog-grounded SHL shortlist for contact centre agents, prioritized from the available catalog matches: SVAR Spoken English (US) (New); Contact Center Call Simulation (New); Customer Service Phone Simulation.",
+            ),
+            ConversationMessage(
+                role="user",
+                content="Is the Contact Center Call Simulation different from the Customer Service Phone Simulation?",
+            ),
+        ]
+    )
+
+    assert goal.latest_intent == "compare"
+    assert goal.prior_shortlist_hints == [
+        "SVAR Spoken English (US) (New)",
+        "Contact Center Call Simulation (New)",
+        "Customer Service Phone Simulation",
+    ]
 
 
 def test_role_pivot_refinement_resets_previous_role_context():
@@ -255,3 +296,29 @@ def test_dependability_text_does_not_imply_ability_focus():
 
     assert "personality" in goal.assessment_focus
     assert "ability" not in goal.assessment_focus
+
+
+def test_sales_audit_request_does_not_block_on_seniority():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="As part of our restructuring and annual talent audit, we need to re-skill our Sales organization.",
+            )
+        ]
+    )
+
+    assert "seniority" not in goal.missing_decision_factors
+
+
+def test_healthcare_admin_screening_does_not_require_seniority():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We're hiring bilingual healthcare admin staff in South Texas. HIPAA compliance is critical.",
+            )
+        ]
+    )
+
+    assert "seniority" not in goal.missing_decision_factors

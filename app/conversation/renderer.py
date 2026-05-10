@@ -83,7 +83,7 @@ def render_clarification(goal: UserGoalProfile, decision: AgentDecision) -> Chat
     return ChatResponse(reply=reply, recommendations=[], end_of_conversation=False)
 
 
-def shortlist_anchor_text(matches: list[CatalogMatch], *, limit: int = 5) -> str:
+def shortlist_anchor_text(matches: list[CatalogMatch], *, limit: int = 10) -> str:
     names = [match.assessment.name for match in matches[:limit]]
     return "; ".join(names) if names else "no matching assessments"
 

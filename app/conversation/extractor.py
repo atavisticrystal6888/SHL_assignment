@@ -27,6 +27,10 @@ SKILL_TERMS = [
     "Excel",
     "HIPAA",
     "Medical Terminology",
+    "Numerical Reasoning",
+    "Financial Accounting",
+    "Statistics",
+    "Finance",
     "REST",
     "Spring",
     "Word",
@@ -566,7 +570,7 @@ def _clean_role_title(value: str) -> str:
 
 def extract_role_titles(text: str) -> list[str]:
     roles: list[str] = []
-    roles.extend(re.findall(r'"([^"\n]+?)\s*[—-]\s*[^"\n]+"', text))
+    roles.extend(re.findall(r'"([^"\n]+?)\s+(?:—|-)\s+[^"\n]+"', text))
 
     patterns = [
         r"hiring\s+(?:a|an|for\s+a|for\s+an)?\s*([^.,;?]+)",

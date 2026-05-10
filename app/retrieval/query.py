@@ -27,6 +27,47 @@ LEADERSHIP_HINTS = {"cxo", "director", "executive", "leader", "leadership"}
 GRADUATE_HINTS = {"graduate", "trainee", "intern", "campus"}
 SALES_HINTS = {"sales", "account executive", "business development"}
 SAFETY_HINTS = {"safety", "dependability", "reliability", "compliance", "cutting corners", "hazard"}
+CONTACT_CENTER_HINTS = {"contact center", "contact centre", "customer service", "inbound calls", "phone simulation"}
+HEALTHCARE_ADMIN_HINTS = {"healthcare admin", "patient records", "medical admin", "hipaa", "bilingual"}
+AUDIT_DEVELOPMENT_HINTS = {"talent audit", "re-skill", "reskill", "restructuring", "development", "audit stack"}
+RUST_INFRA_HINTS = {"rust", "networking", "infrastructure", "linux", "systems"}
+CUSTOMER_SERVICE_SEED_NAMES = [
+    "Contact Center Call Simulation (New)",
+    "Customer Service Phone Simulation",
+    "Entry Level Customer Serv - Retail & Contact Center",
+]
+HEALTHCARE_ADMIN_SEED_NAMES = [
+    "HIPAA (Security)",
+    "Medical Terminology (New)",
+    "Microsoft Word 365 - Essentials (New)",
+    "Dependability and Safety Instrument (DSI)",
+]
+SALES_AUDIT_SEED_NAMES = [
+    "Global Skills Assessment",
+    "Global Skills Development Report",
+    "OPQ MQ Sales Report",
+    "Sales Transformation 2.0 - Individual Contributor",
+]
+RUST_INFRA_SEED_NAMES = [
+    "Smart Interview Live Coding",
+    "Linux Programming (General)",
+    "Networking and Implementation (New)",
+]
+SKILL_ASSESSMENT_SEEDS = {
+    "Angular": ["Angular 6 (New)"],
+    "AWS": ["Amazon Web Services (AWS) Development (New)"],
+    "Docker": ["Docker (New)"],
+    "Financial Accounting": ["Financial Accounting (New)"],
+    "HIPAA": ["HIPAA (Security)"],
+    "Linux": ["Linux Programming (General)"],
+    "Medical Terminology": ["Medical Terminology (New)"],
+    "Networking": ["Networking and Implementation (New)"],
+    "Numerical Reasoning": ["SHL Verify Interactive – Numerical Reasoning"],
+    "REST": ["RESTful Web Services (New)"],
+    "Spring": ["Spring (New)"],
+    "SQL": ["SQL (New)"],
+    "Statistics": ["Basic Statistics (New)"],
+}
 
 
 def dedupe(values: list[str]) -> list[str]:
@@ -73,6 +114,41 @@ def build_seed_assessment_names(goal: UserGoalProfile) -> list[str]:
     if any(hint in role_context for hint in SAFETY_HINTS):
         seeds.append("Dependability and Safety Instrument (DSI)")
 
+    for skill, assessment_names in SKILL_ASSESSMENT_SEEDS.items():
+        if skill in goal.skills:
+            seeds.extend(assessment_names)
+
+    if "Java" in goal.skills:
+        if goal.seniority in {"senior", "manager", "director", "executive"} or any(
+            hint in role_context for hint in {"backend", "full stack", "full-stack", "microservice", "architecture", "design"}
+        ):
+            seeds.append("Core Java (Advanced Level) (New)")
+        else:
+            seeds.append("Java 8 (New)")
+
+    if any(hint in role_context for hint in CONTACT_CENTER_HINTS):
+        seeds.extend(CUSTOMER_SERVICE_SEED_NAMES)
+        svar_by_locale = {
+            "US": "SVAR Spoken English (US) (New)",
+            "UK": "SVAR Spoken English (UK) (New)",
+            "Australian": "SVAR Spoken English (Australian) (New)",
+            "Indian": "SVAR Spoken English (Indian) (New)",
+        }
+        if goal.locale and "English" in goal.languages and goal.locale in svar_by_locale:
+            seeds.append(svar_by_locale[goal.locale])
+
+    if any(hint in role_context for hint in HEALTHCARE_ADMIN_HINTS):
+        seeds.extend(HEALTHCARE_ADMIN_SEED_NAMES)
+
+    if any(hint in role_context for hint in SALES_HINTS) and any(hint in role_context for hint in AUDIT_DEVELOPMENT_HINTS):
+        seeds.extend(SALES_AUDIT_SEED_NAMES)
+
+    if "Rust" in goal.skills and any(hint in role_context for hint in RUST_INFRA_HINTS):
+        seeds.extend(RUST_INFRA_SEED_NAMES)
+
+    if any(term in role_context for term in {"financial analyst", "finance knowledge", "numerical reasoning"}):
+        seeds.extend(["SHL Verify Interactive – Numerical Reasoning", "Financial Accounting (New)", "Basic Statistics (New)"])
+
     return dedupe(seeds)
 
 
@@ -90,7 +166,9 @@ def build_retrieval_query(goal: UserGoalProfile) -> RetrievalQuery:
         conversation_context,
     ]
     query_text = normalize_retrieval_text(" ".join(part for part in parts if part).strip())
-    required_terms = dedupe(goal.skills + role_signal_terms(goal.role_titles) + goal.languages)
+    required_terms = dedupe(goal.skills + goal.languages)
+    if not goal.skills:
+        required_terms = dedupe(required_terms + role_signal_terms(goal.role_titles))
     if goal.locale:
         required_terms.append(goal.locale)
     return RetrievalQuery(

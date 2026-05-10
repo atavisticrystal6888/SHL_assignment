@@ -267,6 +267,19 @@ def test_goal_captures_prior_shortlist_hints_for_follow_up_compare():
     ]
 
 
+def test_quoted_jd_role_preserves_hyphenated_title():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content='Here is a text from job description: "Senior Full-Stack Engineer — 5+ years across Core Java, Spring, REST API design, Angular, SQL, AWS, and Docker."',
+            )
+        ]
+    )
+
+    assert any("Senior Full-Stack Engineer" == role for role in goal.role_titles)
+
+
 def test_role_pivot_refinement_resets_previous_role_context():
     latest_turn = "Actually switch to a senior sales manager role and assess sales leadership and personality fit instead."
     goal = extract_user_goal(

@@ -279,6 +279,51 @@ def test_build_retrieval_query_adds_role_family_seed_assessments():
     assert "Graduate Scenarios" in query.seed_assessment_names
 
 
+def test_build_retrieval_query_adds_customer_service_and_locale_specific_seeds():
+    query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="We are screening entry-level contact centre agents for English US inbound calls.",
+            role_titles=["Contact centre agents"],
+            skills=["Customer Service"],
+            assessment_focus=["simulation", "personality"],
+            languages=["English"],
+            locale="US",
+        )
+    )
+
+    assert "Contact Center Call Simulation (New)" in query.seed_assessment_names
+    assert "Customer Service Phone Simulation" in query.seed_assessment_names
+    assert "Entry Level Customer Serv - Retail & Contact Center" in query.seed_assessment_names
+    assert "SVAR Spoken English (US) (New)" in query.seed_assessment_names
+
+
+def test_build_retrieval_query_adds_healthcare_admin_and_rust_infra_seeds():
+    healthcare_query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Hiring bilingual healthcare admin staff with patient records and HIPAA work.",
+            role_titles=["Healthcare admin staff"],
+            skills=["HIPAA"],
+            assessment_focus=["skills", "personality"],
+        )
+    )
+    rust_query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Hiring a senior Rust engineer for high-performance networking infrastructure.",
+            role_titles=["Rust engineer"],
+            skills=["Rust", "Networking", "Linux"],
+            assessment_focus=["skills"],
+            seniority="senior",
+        )
+    )
+
+    assert "Medical Terminology (New)" in healthcare_query.seed_assessment_names
+    assert "Microsoft Word 365 - Essentials (New)" in healthcare_query.seed_assessment_names
+    assert "Dependability and Safety Instrument (DSI)" in healthcare_query.seed_assessment_names
+    assert "Smart Interview Live Coding" in rust_query.seed_assessment_names
+    assert "Linux Programming (General)" in rust_query.seed_assessment_names
+    assert "Networking and Implementation (New)" in rust_query.seed_assessment_names
+
+
 def test_rank_catalog_boosts_seed_assessments_into_shortlist():
     excel = CatalogAssessment(
         entity_id="1",

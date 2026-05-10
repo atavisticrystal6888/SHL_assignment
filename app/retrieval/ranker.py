@@ -22,6 +22,8 @@ CATEGORY_BY_FOCUS = {
     "simulation": "Simulations",
 }
 
+REFERENCE_OVERLAP_STOP_WORDS = {"a", "an", "and", "for", "in", "of", "on", "or", "the", "to", "with"}
+
 
 @dataclass(frozen=True)
 class CatalogMatch:
@@ -128,8 +130,12 @@ def query_reference_boost(record: CatalogAssessment, query: str) -> float:
     if normalized_name and normalized_name in normalized_query:
         return 2.2
 
-    query_tokens = {token for token in normalized_query.split() if len(token) > 1}
-    name_tokens = {token for token in normalized_name.split() if len(token) > 1}
+    query_tokens = {
+        token for token in normalized_query.split() if len(token) > 1 and token not in REFERENCE_OVERLAP_STOP_WORDS
+    }
+    name_tokens = {
+        token for token in normalized_name.split() if len(token) > 1 and token not in REFERENCE_OVERLAP_STOP_WORDS
+    }
     overlap = len(query_tokens & name_tokens)
     if overlap >= 3:
         return 1.4
@@ -157,6 +163,18 @@ def seed_assessment_boost(record: CatalogAssessment, seed_assessment_names: list
         if normalized_name == normalize_name(seed):
             return 3.2
     return 0.0
+
+
+def matches_seed_assessment(record: CatalogAssessment, seed_assessment_names: list[str]) -> bool:
+    normalized_name = normalize_name(record.name)
+    return any(normalized_name == normalize_name(seed) for seed in seed_assessment_names)
+
+
+def matches_required_terms(record: CatalogAssessment, required_terms: list[str]) -> bool:
+    if not required_terms:
+        return False
+    haystack = normalize_name(" ".join([record.name, record.description, " ".join(record.categories)]))
+    return any(normalize_name(term) and normalize_name(term) in haystack for term in required_terms)
 
 
 def assessment_family_key(record: CatalogAssessment) -> str:
@@ -190,16 +208,78 @@ def dedupe_match_families(selected: list[CatalogMatch], fallback: list[CatalogMa
     return deduped
 
 
-def select_focus_coverage(matches: list[CatalogMatch], preferred_categories: list[str], *, limit: int) -> list[CatalogMatch]:
+def prune_seeded_padding(
+    selected: list[CatalogMatch],
+    *,
+    query: str,
+    preferred_categories: list[str],
+    required_terms: list[str],
+    seed_assessment_names: list[str],
+    job_level_signals: list[str],
+    language_signals: list[str],
+    locale_signal: str | None,
+    limit: int,
+) -> list[CatalogMatch]:
+    if not selected or not seed_assessment_names:
+        return selected
+
+    seeded = [match for match in selected if matches_seed_assessment(match.assessment, seed_assessment_names)]
+    if len(seeded) < 2:
+        return selected
+
+    trimmed: list[CatalogMatch] = []
+    seen: set[str] = set()
+    for match in selected:
+        record = match.assessment
+        keep = False
+        if matches_seed_assessment(record, seed_assessment_names):
+            keep = True
+        elif matches_required_terms(record, required_terms):
+            keep = True
+        elif query_reference_boost(record, query) >= 1.4:
+            keep = True
+        elif len(preferred_categories) == 1 and matches_focus(record, preferred_categories[0]) and job_level_boost(record, job_level_signals) > 0:
+            keep = True
+        elif language_boost(record, language_signals, locale_signal) > 0.6:
+            keep = True
+        if not keep or record.entity_id in seen:
+            continue
+        trimmed.append(match)
+        seen.add(record.entity_id)
+        if len(trimmed) >= limit:
+            break
+
+    return trimmed if len(trimmed) >= len(seeded) else selected
+
+
+def select_focus_coverage(
+    matches: list[CatalogMatch],
+    preferred_categories: list[str],
+    *,
+    seed_assessment_names: list[str] | None = None,
+    limit: int,
+) -> list[CatalogMatch]:
     focuses = list(dict.fromkeys(focus for focus in preferred_categories if focus in CATEGORY_BY_FOCUS))
     if len(focuses) < 2:
         return matches[:limit]
+    seed_assessment_names = seed_assessment_names or []
+
+    outside_focus_seeded = [
+        match
+        for match in matches
+        if matches_seed_assessment(match.assessment, seed_assessment_names)
+        and not any(matches_focus(match.assessment, focus) for focus in focuses)
+    ]
+    reserved_seed_slots = min(len(outside_focus_seeded), max(1, limit // (len(focuses) + 1))) if outside_focus_seeded else 0
+    focus_budget = max(len(focuses), limit - reserved_seed_slots)
 
     # Ensure proportional representation across focus areas.
-    # Reserve at least 2 slots (or 1 if limit is small) per focus, then fill with best scores.
-    slots_per_focus = max(1, limit // len(focuses))
+    # Keep the explicit focus ordering first, but reserve a small amount of space for
+    # seeded batteries that sit outside those focus categories so they are not crowded out.
+    slots_per_focus = min(2, max(1, focus_budget // len(focuses)))
     selected: list[CatalogMatch] = []
     seen: set[str] = set()
+
     for focus in focuses:
         count = 0
         for match in matches:
@@ -211,6 +291,14 @@ def select_focus_coverage(matches: list[CatalogMatch], preferred_categories: lis
                 count += 1
                 if count >= slots_per_focus:
                     break
+
+    for match in outside_focus_seeded:
+        if match.assessment.entity_id in seen:
+            continue
+        selected.append(match)
+        seen.add(match.assessment.entity_id)
+        if len(selected) >= focus_budget + reserved_seed_slots:
+            return selected[:limit]
 
     for match in matches:
         if match.assessment.entity_id in seen:
@@ -284,8 +372,24 @@ def rank_catalog(
             )
         )
     matches.sort(key=lambda match: (-match.score, match.assessment.name.lower()))
-    selected = select_focus_coverage(matches, preferred_categories, limit=limit)
+    selected = select_focus_coverage(
+        matches,
+        preferred_categories,
+        seed_assessment_names=seed_assessment_names,
+        limit=limit,
+    )
     selected = dedupe_match_families(selected, matches, limit=limit)
+    selected = prune_seeded_padding(
+        selected,
+        query=query,
+        preferred_categories=preferred_categories,
+        required_terms=required_terms,
+        seed_assessment_names=seed_assessment_names,
+        job_level_signals=job_level_signals,
+        language_signals=language_signals,
+        locale_signal=locale_signal,
+        limit=limit,
+    )
     # Drop low-scoring padding: keep only results scoring at least 25% of the top score,
     # but only when a single focus is active. With multiple focuses the coverage selector
     # already ensures balance so the threshold would remove needed diversity.

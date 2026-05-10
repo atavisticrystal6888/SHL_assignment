@@ -15,8 +15,8 @@ from app.api.health_router import router as health_router
 from app.api.landing_router import router as landing_router
 from app.api.schemas import ChatResponse
 from app.api.validators import malformed_chat_response, parse_chat_request, validate_chat_response, validate_refusal_response
-from app.catalog.repository import CatalogRepository
-from app.conversation.extractor import extract_user_goal_result
+from app.catalog.repository import ASSESSMENT_ALIASES, CatalogRepository, normalize_name
+from app.conversation.extractor import extract_user_goal_result, has_confirmation_intent
 from app.conversation.policy import decide_next_action
 from app.conversation.renderer import (
     maybe_rewrite_reply,
@@ -116,6 +116,25 @@ def resolve_prior_shortlist_matches(goal, catalog: CatalogRepository) -> list[Ca
     return matches
 
 
+def explicitly_selected_prior_matches(goal, prior_matches: list[CatalogMatch]) -> list[CatalogMatch]:
+    normalized_latest = normalize_name(goal.latest_user_text)
+    explicit_list_markers = ("final list", "final shortlist", "keep only", "only the")
+    if not normalized_latest or not any(marker in normalized_latest for marker in explicit_list_markers):
+        return []
+
+    selected: list[CatalogMatch] = []
+    for match in prior_matches:
+        normalized_name = normalize_name(match.assessment.name)
+        if normalized_name and normalized_name in normalized_latest:
+            selected.append(match)
+            continue
+        for alias, canonical_name in ASSESSMENT_ALIASES.items():
+            if normalize_name(canonical_name) == normalized_name and normalize_name(alias) in normalized_latest:
+                selected.append(match)
+                break
+    return selected
+
+
 def carry_forward_matches(goal, prior_matches: list[CatalogMatch], matches: list[CatalogMatch]) -> list[CatalogMatch]:
     if not prior_matches:
         return matches
@@ -126,6 +145,9 @@ def carry_forward_matches(goal, prior_matches: list[CatalogMatch], matches: list
         if any(term in haystack for term in excluded_terms):
             continue
         retained_prior.append(match)
+    explicitly_selected = explicitly_selected_prior_matches(goal, retained_prior)
+    if explicitly_selected:
+        return explicitly_selected
     if goal.latest_intent == "compare":
         return retained_prior
     if goal.latest_intent not in {"recommend", "refine"}:

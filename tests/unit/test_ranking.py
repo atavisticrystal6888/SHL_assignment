@@ -293,7 +293,7 @@ def test_build_retrieval_query_adds_customer_service_and_locale_specific_seeds()
 
     assert "Contact Center Call Simulation (New)" in query.seed_assessment_names
     assert "Customer Service Phone Simulation" in query.seed_assessment_names
-    assert "Entry Level Customer Serv - Retail & Contact Center" in query.seed_assessment_names
+    assert "Entry Level Customer Serv-Retail & Contact Center" in query.seed_assessment_names
     assert "SVAR Spoken English (US) (New)" in query.seed_assessment_names
 
 
@@ -319,9 +319,82 @@ def test_build_retrieval_query_adds_healthcare_admin_and_rust_infra_seeds():
     assert "Medical Terminology (New)" in healthcare_query.seed_assessment_names
     assert "Microsoft Word 365 - Essentials (New)" in healthcare_query.seed_assessment_names
     assert "Dependability and Safety Instrument (DSI)" in healthcare_query.seed_assessment_names
+    assert "Occupational Personality Questionnaire OPQ32r" in healthcare_query.seed_assessment_names
+    assert "Workplace Health and Safety (New)" not in healthcare_query.seed_assessment_names
+    assert "SHL Verify Interactive G+" in rust_query.seed_assessment_names
     assert "Smart Interview Live Coding" in rust_query.seed_assessment_names
     assert "Linux Programming (General)" in rust_query.seed_assessment_names
     assert "Networking and Implementation (New)" in rust_query.seed_assessment_names
+
+
+def test_build_retrieval_query_adds_verify_g_and_honors_rest_exclusion_for_senior_technical_refinement():
+    query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Add AWS and Docker. Drop REST - the API design signal will already come through in Spring and the live interview.",
+            role_titles=["Senior Full-Stack Engineer"],
+            skills=["Java", "SQL", "Angular", "AWS", "Docker", "Spring"],
+            assessment_focus=["skills"],
+            seniority="mid-level",
+            excluded_terms=["REST"],
+        )
+    )
+
+    assert "SHL Verify Interactive G+" in query.seed_assessment_names
+    assert "RESTful Web Services (New)" not in query.seed_assessment_names
+
+
+def test_build_retrieval_query_adds_safety_and_office_simulation_seeds():
+    safety_query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Hiring plant operators for a chemical facility where safety and compliance matter most.",
+            role_titles=["Plant operators"],
+            assessment_focus=["personality", "skills"],
+        )
+    )
+    office_query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Screen admin assistants for Excel and Word. Add simulations.",
+            role_titles=["Admin assistants"],
+            skills=["Excel", "Word"],
+            assessment_focus=["skills", "simulation"],
+        )
+    )
+
+    assert "Workplace Health and Safety (New)" in safety_query.seed_assessment_names
+    assert "Manufac. & Indust. - Safety & Dependability 8.0" in safety_query.seed_assessment_names
+    assert "Microsoft Excel 365 (New)" in office_query.seed_assessment_names
+    assert "Microsoft Word 365 (New)" in office_query.seed_assessment_names
+
+
+def test_build_retrieval_query_prefers_short_office_simulations_when_requested():
+    office_query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Screen admin assistants for Excel and Word with quick simulations.",
+            role_titles=["Admin assistants"],
+            skills=["Excel", "Word"],
+            assessment_focus=["skills", "simulation"],
+            constraints=["prefer_short"],
+        )
+    )
+
+    assert "Microsoft Excel 365 - Essentials (New)" in office_query.seed_assessment_names
+    assert "Microsoft Word 365 - Essentials (New)" in office_query.seed_assessment_names
+
+
+def test_build_retrieval_query_adds_exact_contact_center_locale_seeds():
+    query = build_retrieval_query(
+        UserGoalProfile(
+            latest_user_text="Hiring contact centre advisers for customer calls.",
+            role_titles=["Contact centre advisers"],
+            languages=["English"],
+            locale="UK",
+            assessment_focus=["simulation"],
+        )
+    )
+
+    assert "Contact Center Call Simulation (New)" in query.seed_assessment_names
+    assert "Entry Level Customer Serv-Retail & Contact Center" in query.seed_assessment_names
+    assert "SVAR - Spoken English (U.K.)" in query.seed_assessment_names
 
 
 def test_rank_catalog_boosts_seed_assessments_into_shortlist():
@@ -436,6 +509,143 @@ def test_rank_catalog_dedupes_report_variants_by_family():
     )
 
     assert [match.assessment.entity_id for match in matches] == ["3", "1"]
+
+
+def test_rank_catalog_prunes_seeded_padding_when_battery_is_already_covered():
+    verify = CatalogAssessment(
+        entity_id="1",
+        name="SHL Verify Interactive G+",
+        url="https://www.shl.com/products/product-catalog/view/shl-verify-interactive-g/",
+        test_type="A",
+        categories=["Ability & Aptitude"],
+        description="Interactive general ability assessment.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    opq = CatalogAssessment(
+        entity_id="2",
+        name="Occupational Personality Questionnaire OPQ32r",
+        url="https://www.shl.com/products/product-catalog/view/occupational-personality-questionnaire-opq32r/",
+        test_type="P",
+        categories=["Personality & Behavior"],
+        description="Measures workplace personality preferences.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    graduate = CatalogAssessment(
+        entity_id="3",
+        name="Graduate Scenarios",
+        url="https://www.shl.com/products/product-catalog/view/graduate-scenarios/",
+        test_type="B",
+        categories=["Biodata & Situational Judgment"],
+        description="Situational judgment scenarios for graduate hires.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    noisy = CatalogAssessment(
+        entity_id="4",
+        name="Digital Readiness Development Report - Manager",
+        url="https://www.shl.com/products/product-catalog/view/digital-readiness-development-report-manager/",
+        test_type="D",
+        categories=["Ability & Aptitude"],
+        description="Development report for digital readiness.",
+        job_levels=["Graduate"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([noisy, graduate, opq, verify])
+
+    matches = rank_catalog(
+        index,
+        "Graduate management trainee full battery with cognitive personality and situational judgement.",
+        limit=4,
+        preferred_categories=["ability", "personality", "situational judgment"],
+        seed_assessment_names=[
+            "SHL Verify Interactive G+",
+            "Occupational Personality Questionnaire OPQ32r",
+            "Graduate Scenarios",
+        ],
+        job_level_signals=["graduate"],
+    )
+
+    assert [match.assessment.entity_id for match in matches] == ["1", "2", "3"]
+
+
+def test_rank_catalog_keeps_seeded_non_focus_match_with_multi_focus_queries():
+    simulation = CatalogAssessment(
+        entity_id="1",
+        name="Contact Center Call Simulation (New)",
+        url="https://www.shl.com/products/product-catalog/view/contact-center-call-simulation-new/",
+        test_type="S",
+        categories=["Simulations"],
+        description="Call simulation for contact center roles.",
+        job_levels=["Entry-Level"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    skills = CatalogAssessment(
+        entity_id="2",
+        name="Customer Service Phone Simulation",
+        url="https://www.shl.com/products/product-catalog/view/customer-service-phone-simulation/",
+        test_type="S",
+        categories=["Simulations", "Knowledge & Skills"],
+        description="Phone simulation for customer service roles.",
+        job_levels=["Entry-Level"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    personality = CatalogAssessment(
+        entity_id="3",
+        name="Entry Level Customer Serv-Retail & Contact Center",
+        url="https://www.shl.com/products/product-catalog/view/entry-level-customer-serv-retail-and-contact-center/",
+        test_type="P",
+        categories=["Personality & Behavior", "Competencies"],
+        description="Entry-level retail and contact center customer service solution.",
+        job_levels=["Entry-Level"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    filler_one = CatalogAssessment(
+        entity_id="4",
+        name="Retail Sales and Service Simulation",
+        url="https://www.shl.com/products/product-catalog/view/retail-sales-and-service-simulation/",
+        test_type="S",
+        categories=["Simulations", "Knowledge & Skills"],
+        description="Retail sales simulation.",
+        job_levels=["Entry-Level"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    filler_two = CatalogAssessment(
+        entity_id="5",
+        name="Data Entry Numeric Split Screen - US",
+        url="https://www.shl.com/products/product-catalog/view/data-entry-numeric-split-screen-us/",
+        test_type="S",
+        categories=["Simulations", "Knowledge & Skills"],
+        description="Numeric data entry simulation.",
+        job_levels=["Entry-Level"],
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+    index = build_catalog_index([personality, filler_two, filler_one, skills, simulation])
+
+    matches = rank_catalog(
+        index,
+        "entry-level contact center simulation and retail contact-center screen in english uk",
+        limit=4,
+        preferred_categories=["simulation", "skills"],
+        required_terms=["English", "UK", "contact center", "entry-level"],
+        seed_assessment_names=[
+            "Contact Center Call Simulation (New)",
+            "Customer Service Phone Simulation",
+            "Entry Level Customer Serv-Retail & Contact Center",
+        ],
+    )
+
+    assert [match.assessment.entity_id for match in matches] == ["1", "2", "3"]
 
 
 def test_rerank_catalog_with_llm_reorders_existing_candidates_only():

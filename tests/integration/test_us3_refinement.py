@@ -109,3 +109,31 @@ def test_role_pivot_replaces_previous_shortlist_context():
     assert any("sales" in name or "opq" in name for name in names)
     assert all("java" not in name and "spring" not in name and "sql" not in name for name in names)
     assert "updated" in body["reply"].lower()
+
+
+def test_explicit_final_list_keeps_only_named_prior_matches():
+    client = TestClient(app)
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hiring graduate trainees for a full battery.",
+                },
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Here is a catalog-grounded SHL shortlist for graduate trainees, prioritized from the available "
+                        "catalog matches: SHL Verify Interactive G+; Occupational Personality Questionnaire OPQ32r; "
+                        "Graduate Scenarios; Management Scenarios."
+                    ),
+                },
+                {"role": "user", "content": "Drop the OPQ. Final list: Verify G+ and Graduate Scenarios."},
+            ]
+        },
+    )
+
+    body = response.json()
+    assert [item["name"] for item in body["recommendations"]] == ["SHL Verify Interactive G+", "Graduate Scenarios"]
+    assert "removed: opq" in body["reply"].lower()

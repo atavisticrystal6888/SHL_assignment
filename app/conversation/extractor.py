@@ -43,6 +43,7 @@ EXCLUSION_TERMS = {
     "Linux": ("linux",),
     "Networking": ("networking",),
     "SQL": ("sql",),
+    "REST": ("rest", "rest api", "restful api", "restful web services"),
     "OPQ": ("opq", "occupational personality questionnaire"),
 }
 REFINEMENT_TERMS = (
@@ -378,6 +379,12 @@ def normalize_locale_hint(value: Any) -> str | None:
     return LOCALE_TERMS.get(candidate, value.strip())
 
 
+def normalize_locale_abbreviations(text: str) -> str:
+    normalized = re.sub(r"(?<!\w)u\.k\.(?!\w)", "uk", text, flags=re.IGNORECASE)
+    normalized = re.sub(r"(?<!\w)u\.s\.(?:a\.)?(?!\w)", "us", normalized, flags=re.IGNORECASE)
+    return normalized
+
+
 def has_confirmation_intent(text: str) -> bool:
     lowered = " ".join(text.lower().split())
     return any(term in lowered for term in CONFIRMATION_TERMS)
@@ -404,9 +411,7 @@ def compute_missing_factors(
         return []
     languages = languages or []
     lowered_conversation = conversation_text.lower()
-    requires_language = "simulation" in assessment_focus or any(
-        hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS
-    )
+    requires_language = any(hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS)
     requires_locale = requires_language and any(language == "English" for language in languages) and any(
         hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS
     )
@@ -569,15 +574,17 @@ def _clean_role_title(value: str) -> str:
 
 
 def extract_role_titles(text: str) -> list[str]:
+    text = normalize_locale_abbreviations(text)
     roles: list[str] = []
     roles.extend(re.findall(r'"([^"\n]+?)\s+(?:—|-)\s+[^"\n]+"', text))
 
     patterns = [
-        r"hiring\s+(?:a|an|for\s+a|for\s+an)?\s*([^.,;?]+)",
-        r"need\s+(?:a|an)?\s*assessment\s+for\s+([^.,;?]+)",
-        r"(?:this\s+is|it\s+is|it's|role\s+is|this\s+role\s+is)\s+(?:for\s+)?(?:a|an)?\s*([^.,;?]+)",
-        r"make\s+it\s+(?:for\s+)?(?:a|an)?\s*([^.,;?]+)",
-        r"(?:switch|pivot)\s+(?:to|toward)\s+(?:a|an)?\s*([^.,;?]+)",
+        r"hiring\s+(?:(?:a|an)\s+|for\s+a\s+|for\s+an\s+)?([^.,;?]+)",
+        r"need\s+(?:assessments?|tests?)\s+for\s+([^.,;?]+)",
+        r"need\s+(?:(?:a|an)\s+)?assessment\s+for\s+([^.,;?]+)",
+        r"(?:this\s+is|it\s+is|it's|role\s+is|this\s+role\s+is)\s+(?:for\s+)?(?:(?:a|an)\s+)?([^.,;?]+)",
+        r"make\s+it\s+(?:for\s+)?(?:(?:a|an)\s+)?([^.,;?]+)",
+        r"(?:switch|pivot)\s+(?:to|toward)\s+(?:(?:a|an)\s+)?([^.,;?]+)",
         r"pool\s+consists\s+of\s+([^.;?]+)",
         r"screen(?:ing)?\s+(?:\d+\s+)?([^.;?]+?)(?:\s+for\b|[.;?]|$)",
         r"re-?skill\s+our\s+([^.;?]+)",
@@ -609,7 +616,7 @@ def extract_languages(text: str) -> list[str]:
 
 
 def extract_locale(text: str) -> str | None:
-    lowered = text.lower()
+    lowered = normalize_locale_abbreviations(text.lower())
     for term, canonical in sorted(LOCALE_TERMS.items(), key=lambda item: len(item[0]), reverse=True):
         if text_contains(lowered, term):
             return canonical
@@ -791,10 +798,15 @@ def extract_user_goal_result(
     seniority = latest_seniority if latest_is_refinement and latest_seniority else extract_seniority(base_text)
     focus = extract_focus(base_text)
     # During refinement, merge any new focus from the latest message (e.g. "add personality tests")
+    latest_focus: list[str] = []
     if latest_is_refinement and not replace_prior_context:
         latest_focus = extract_focus(latest_text)
         focus = dedupe(focus + latest_focus)
     constraints = extract_constraints(base_text)
+    if latest_is_refinement and not replace_prior_context:
+        latest_constraints = extract_constraints(latest_text)
+        if "simulation" in latest_focus and "prefer_short" in constraints and "prefer_short" not in latest_constraints:
+            constraints = [constraint for constraint in constraints if constraint != "prefer_short"]
     missing = compute_missing_factors(
         roles,
         seniority,

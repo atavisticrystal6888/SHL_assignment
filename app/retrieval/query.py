@@ -26,15 +26,18 @@ ROLE_SIGNAL_STOPWORDS = {"a", "an", "and", "for", "level", "mid", "of", "role", 
 LEADERSHIP_HINTS = {"cxo", "director", "executive", "leader", "leadership"}
 GRADUATE_HINTS = {"graduate", "trainee", "intern", "campus"}
 SALES_HINTS = {"sales", "account executive", "business development"}
-SAFETY_HINTS = {"safety", "dependability", "reliability", "compliance", "cutting corners", "hazard"}
+SAFETY_HINTS = {"safety", "dependability", "reliability", "cutting corners", "hazard"}
 CONTACT_CENTER_HINTS = {"contact center", "contact centre", "customer service", "inbound calls", "phone simulation"}
 HEALTHCARE_ADMIN_HINTS = {"healthcare admin", "patient records", "medical admin", "hipaa", "bilingual"}
 AUDIT_DEVELOPMENT_HINTS = {"talent audit", "re-skill", "reskill", "restructuring", "development", "audit stack"}
 RUST_INFRA_HINTS = {"rust", "networking", "infrastructure", "linux", "systems"}
+INDUSTRIAL_HINTS = {"industrial", "manufacturing", "chemical", "plant operator", "plant operators", "facility"}
+TECHNICAL_VERIFY_G_HINTS = {"architecture", "architectural", "cognitive", "high performance", "high-performance", "infrastructure", "microservice", "microservices"}
+TECHNICAL_VERIFY_G_SKILLS = {"AWS", "Angular", "Docker", "Java", "JavaScript", "Linux", "Networking", "Python", "REST", "Rust", "SQL", "Spring"}
 CUSTOMER_SERVICE_SEED_NAMES = [
     "Contact Center Call Simulation (New)",
     "Customer Service Phone Simulation",
-    "Entry Level Customer Serv - Retail & Contact Center",
+    "Entry Level Customer Serv-Retail & Contact Center",
 ]
 HEALTHCARE_ADMIN_SEED_NAMES = [
     "HIPAA (Security)",
@@ -47,6 +50,10 @@ SALES_AUDIT_SEED_NAMES = [
     "Global Skills Development Report",
     "OPQ MQ Sales Report",
     "Sales Transformation 2.0 - Individual Contributor",
+]
+SAFETY_SEED_NAMES = [
+    "Dependability and Safety Instrument (DSI)",
+    "Workplace Health and Safety (New)",
 ]
 RUST_INFRA_SEED_NAMES = [
     "Smart Interview Live Coding",
@@ -93,9 +100,18 @@ def build_seed_assessment_names(goal: UserGoalProfile) -> list[str]:
     excluded_terms = {term.lower() for term in goal.excluded_terms}
     focus = set(goal.assessment_focus)
     seeds: list[str] = []
+    technical_skills = TECHNICAL_VERIFY_G_SKILLS.intersection(goal.skills)
 
     if "opq" not in excluded_terms and goal.role_titles and not any(hint in role_context for hint in SAFETY_HINTS):
         seeds.append("Occupational Personality Questionnaire OPQ32r")
+
+    if technical_skills and (
+        "ability" in focus
+        or goal.seniority in {"senior", "manager", "director", "executive"}
+        or any("senior" in normalize_retrieval_text(role) for role in goal.role_titles)
+        or any(hint in role_context for hint in TECHNICAL_VERIFY_G_HINTS)
+    ):
+        seeds.append("SHL Verify Interactive G+")
 
     if any(hint in role_context for hint in LEADERSHIP_HINTS):
         seeds.append("OPQ Leadership Report")
@@ -112,7 +128,9 @@ def build_seed_assessment_names(goal: UserGoalProfile) -> list[str]:
         seeds.append("OPQ MQ Sales Report")
 
     if any(hint in role_context for hint in SAFETY_HINTS):
-        seeds.append("Dependability and Safety Instrument (DSI)")
+        seeds.extend(SAFETY_SEED_NAMES)
+        if any(hint in role_context for hint in INDUSTRIAL_HINTS):
+            seeds.append("Manufac. & Indust. - Safety & Dependability 8.0")
 
     for skill, assessment_names in SKILL_ASSESSMENT_SEEDS.items():
         if skill in goal.skills:
@@ -130,15 +148,27 @@ def build_seed_assessment_names(goal: UserGoalProfile) -> list[str]:
         seeds.extend(CUSTOMER_SERVICE_SEED_NAMES)
         svar_by_locale = {
             "US": "SVAR Spoken English (US) (New)",
-            "UK": "SVAR Spoken English (UK) (New)",
-            "Australian": "SVAR Spoken English (Australian) (New)",
-            "Indian": "SVAR Spoken English (Indian) (New)",
+            "UK": "SVAR - Spoken English (U.K.)",
+            "Australian": "SVAR - Spoken English (AUS)",
+            "Indian": "SVAR - Spoken English (Indian Accent) (New)",
         }
         if goal.locale and "English" in goal.languages and goal.locale in svar_by_locale:
             seeds.append(svar_by_locale[goal.locale])
 
     if any(hint in role_context for hint in HEALTHCARE_ADMIN_HINTS):
         seeds.extend(HEALTHCARE_ADMIN_SEED_NAMES)
+
+    if "simulation" in focus:
+        if "Excel" in goal.skills:
+            if "prefer_short" in goal.constraints:
+                seeds.append("Microsoft Excel 365 - Essentials (New)")
+            else:
+                seeds.append("Microsoft Excel 365 (New)")
+        if "Word" in goal.skills:
+            if "prefer_short" in goal.constraints:
+                seeds.append("Microsoft Word 365 - Essentials (New)")
+            else:
+                seeds.append("Microsoft Word 365 (New)")
 
     if any(hint in role_context for hint in SALES_HINTS) and any(hint in role_context for hint in AUDIT_DEVELOPMENT_HINTS):
         seeds.extend(SALES_AUDIT_SEED_NAMES)

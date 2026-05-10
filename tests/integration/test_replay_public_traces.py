@@ -40,3 +40,10 @@ def test_replay_expected_shortlist_supports_recall_at_10_measurement():
     actual = expected[:2]
 
     assert recall_at_k(expected, actual, k=10) == 2 / len(expected)
+
+
+def test_public_trace_parser_uses_last_shortlist_table_for_c10():
+    fixtures = discover_trace_fixtures(settings.trace_fixtures_dir)
+    parsed = parse_trace_fixture(next(fixture for fixture in fixtures if fixture.trace_id == "C10"))
+
+    assert [item.name for item in parsed.expected_shortlist] == ["SHL Verify Interactive G+", "Graduate Scenarios"]

@@ -27,6 +27,10 @@ SKILL_TERMS = [
     "Excel",
     "HIPAA",
     "Medical Terminology",
+    "Numerical Reasoning",
+    "Financial Accounting",
+    "Statistics",
+    "Finance",
     "REST",
     "Spring",
     "Word",
@@ -218,6 +222,39 @@ SIMULATION_FOCUS_HINTS = (
     "spoken language",
     "volume screening",
 )
+TECHNICAL_SENIORITY_HINTS = (
+    "developer",
+    "engineer",
+    "software",
+    "backend",
+    "frontend",
+    "full stack",
+    "full-stack",
+    "programmer",
+    "microservice",
+)
+GROUP_SCOPE_HINTS = (
+    "organization",
+    "organisation",
+    "talent audit",
+    "re-skill",
+    "reskill",
+    "restructuring",
+    "scheme",
+    "pool consists",
+    "everyone",
+    "all recent graduates",
+)
+OPERATIONAL_SCOPE_HINTS = (
+    "contact center",
+    "contact centre",
+    "admin assistant",
+    "admin staff",
+    "plant operator",
+    "patient records",
+    "hipaa",
+    "bilingual",
+)
 
 
 @dataclass(frozen=True)
@@ -235,6 +272,7 @@ class UserGoalProfile:
     excluded_terms: list[str] = field(default_factory=list)
     comparison_targets: list[str] = field(default_factory=list)
     has_prior_recommendation: bool = False
+    prior_shortlist_hints: list[str] = field(default_factory=list)
     missing_decision_factors: list[str] = field(default_factory=list)
     latest_intent: str = "clarify"
 
@@ -258,6 +296,39 @@ def user_text(messages: list[ConversationMessage]) -> str:
 
 def dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
+
+
+def _split_shortlist_items(value: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", value).strip(" .")
+    if not normalized:
+        return []
+    normalized = normalized.replace(" and ", "; ")
+    return dedupe(
+        item.strip(" .,-")
+        for item in re.split(r"\s*;\s*|\s*,\s*(?=[A-Z])", normalized)
+        if item.strip(" .,-")
+    )
+
+
+def extract_prior_shortlist_hints(messages: list[ConversationMessage]) -> list[str]:
+    hints: list[str] = []
+    patterns = (
+        r"shortlist(?:[^:]*):\s*(.+?)(?:\.\s*Removed:|\.$|$)",
+        r"shortlist\s+includes\s+(.+?)(?:\.\s*|$)",
+        r"catalog\s+matches:\s*(.+?)(?:\.\s*|$)",
+    )
+    for message in messages:
+        if message.role != "assistant":
+            continue
+        lowered = message.content.lower()
+        if "shortlist" not in lowered and "catalog matches" not in lowered:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, message.content, flags=re.IGNORECASE | re.DOTALL)
+            if match:
+                hints.extend(_split_shortlist_items(match.group(1)))
+                break
+    return dedupe(hints)
 
 
 def normalize_string_list(value: Any) -> list[str]:
@@ -345,7 +416,7 @@ def compute_missing_factors(
     missing: list[str] = []
     if not role_titles:
         missing.append("role")
-    if seniority is None and not has_prior_recommendation:
+    if seniority is None and not has_prior_recommendation and seniority_is_required(role_titles, assessment_focus, skills or [], conversation_text):
         missing.append("seniority")
     if not assessment_focus:
         missing.append("assessment_focus")
@@ -354,6 +425,24 @@ def compute_missing_factors(
     if requires_locale and not locale:
         missing.append("locale")
     return missing
+
+
+def seniority_is_required(
+    role_titles: list[str],
+    assessment_focus: list[str],
+    skills: list[str],
+    conversation_text: str,
+) -> bool:
+    lowered = conversation_text.lower()
+    if any(hint in lowered for hint in GROUP_SCOPE_HINTS + OPERATIONAL_SCOPE_HINTS):
+        return False
+    if any(term in lowered for term in ("graduate", "entry-level", "entry level", "executive", "director", "cxo")):
+        return False
+    if any(skill in {"Java", "Python", "JavaScript", "Rust", "Linux", "Networking", "SQL", "Angular", "AWS", "Docker", "REST", "Spring"} for skill in skills):
+        return True
+    if any(hint in lowered for hint in TECHNICAL_SENIORITY_HINTS):
+        return True
+    return "skills" in assessment_focus and any("technical" in role.lower() for role in role_titles)
 
 
 def determine_latest_intent(
@@ -409,6 +498,8 @@ def summarize_user_goal(goal: UserGoalProfile) -> str:
         lines.append(f"Excluded terms: {', '.join(goal.excluded_terms)}")
     if goal.comparison_targets:
         lines.append(f"Comparison targets: {', '.join(goal.comparison_targets)}")
+    if goal.prior_shortlist_hints:
+        lines.append(f"Prior shortlist hints: {', '.join(goal.prior_shortlist_hints)}")
     if goal.missing_decision_factors:
         lines.append(f"Missing decision factors: {', '.join(goal.missing_decision_factors)}")
     return "\n".join(lines)
@@ -462,6 +553,7 @@ def merge_goal_with_llm_hints(
         comparison_targets=comparison_targets,
         has_prior_recommendation=goal.has_prior_recommendation,
         missing_decision_factors=missing,
+        prior_shortlist_hints=goal.prior_shortlist_hints,
         latest_intent=latest_intent,
     )
 
@@ -478,7 +570,7 @@ def _clean_role_title(value: str) -> str:
 
 def extract_role_titles(text: str) -> list[str]:
     roles: list[str] = []
-    roles.extend(re.findall(r'"([^"\n]+?)\s*[—-]\s*[^"\n]+"', text))
+    roles.extend(re.findall(r'"([^"\n]+?)\s+(?:—|-)\s+[^"\n]+"', text))
 
     patterns = [
         r"hiring\s+(?:a|an|for\s+a|for\s+an)?\s*([^.,;?]+)",
@@ -720,6 +812,9 @@ def extract_user_goal_result(
         has_prior_recommendation=prior_recommendation,
         missing_decision_factors=missing,
     )
+    prior_shortlist_hints = extract_prior_shortlist_hints(messages)
+    if replace_prior_context:
+        prior_shortlist_hints = []
     goal = UserGoalProfile(
         latest_user_text=latest_text,
         conversation_text=conversation_text,
@@ -734,6 +829,7 @@ def extract_user_goal_result(
         excluded_terms=exclusions,
         comparison_targets=comparison_targets,
         has_prior_recommendation=prior_recommendation,
+        prior_shortlist_hints=prior_shortlist_hints,
         missing_decision_factors=missing,
         latest_intent=latest_intent,
     )

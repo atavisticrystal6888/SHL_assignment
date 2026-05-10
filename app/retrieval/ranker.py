@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -150,6 +151,45 @@ def alias_reference_boost(record: CatalogAssessment, query: str) -> float:
     return 0.0
 
 
+def seed_assessment_boost(record: CatalogAssessment, seed_assessment_names: list[str]) -> float:
+    normalized_name = normalize_name(record.name)
+    for seed in seed_assessment_names:
+        if normalized_name == normalize_name(seed):
+            return 3.2
+    return 0.0
+
+
+def assessment_family_key(record: CatalogAssessment) -> str:
+    normalized_name = normalize_name(record.name)
+    alias_target = ASSESSMENT_ALIASES.get(normalized_name)
+    if alias_target:
+        return normalize_name(alias_target)
+
+    family_name = normalized_name
+    if any(token in family_name for token in (" report", " profile", " narrative")):
+        family_name = re.sub(r"\b(reports?|profile|narrative)\b", " ", family_name)
+        family_name = re.sub(r"(?:\s+\d+)+$", "", family_name).strip()
+    return re.sub(r"\s+", " ", family_name).strip()
+
+
+def dedupe_match_families(selected: list[CatalogMatch], fallback: list[CatalogMatch], *, limit: int) -> list[CatalogMatch]:
+    deduped: list[CatalogMatch] = []
+    seen_families: set[str] = set()
+    seen_entities: set[str] = set()
+
+    for match in selected + fallback:
+        entity_id = match.assessment.entity_id
+        family_key = assessment_family_key(match.assessment)
+        if entity_id in seen_entities or family_key in seen_families:
+            continue
+        deduped.append(match)
+        seen_entities.add(entity_id)
+        seen_families.add(family_key)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
 def select_focus_coverage(matches: list[CatalogMatch], preferred_categories: list[str], *, limit: int) -> list[CatalogMatch]:
     focuses = list(dict.fromkeys(focus for focus in preferred_categories if focus in CATEGORY_BY_FOCUS))
     if len(focuses) < 2:
@@ -190,6 +230,7 @@ def rank_catalog(
     eligible_only: bool = True,
     preferred_categories: list[str] | None = None,
     required_terms: list[str] | None = None,
+    seed_assessment_names: list[str] | None = None,
     job_level_signals: list[str] | None = None,
     language_signals: list[str] | None = None,
     locale_signal: str | None = None,
@@ -201,6 +242,7 @@ def rank_catalog(
         return []
     preferred_categories = preferred_categories or []
     required_terms = required_terms or []
+    seed_assessment_names = seed_assessment_names or []
     job_level_signals = job_level_signals or []
     language_signals = language_signals or []
     excluded_terms = excluded_terms or []
@@ -224,6 +266,7 @@ def rank_catalog(
         total_score += focus_penalty(record, preferred_categories)
         total_score += query_reference_boost(record, query)
         total_score += alias_reference_boost(record, query)
+        total_score += seed_assessment_boost(record, seed_assessment_names)
         if "prefer_short" in constraints and record.duration_minutes is not None:
             total_score += max(0.0, (30 - record.duration_minutes) / 100)
         if total_score <= 0:
@@ -242,6 +285,7 @@ def rank_catalog(
         )
     matches.sort(key=lambda match: (-match.score, match.assessment.name.lower()))
     selected = select_focus_coverage(matches, preferred_categories, limit=limit)
+    selected = dedupe_match_families(selected, matches, limit=limit)
     # Drop low-scoring padding: keep only results scoring at least 25% of the top score,
     # but only when a single focus is active. With multiple focuses the coverage selector
     # already ensures balance so the threshold would remove needed diversity.

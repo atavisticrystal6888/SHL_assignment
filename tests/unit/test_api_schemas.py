@@ -72,6 +72,19 @@ def test_health_and_chat_stubs_preserve_exact_public_shape():
     assert response.json()["recommendations"] == []
 
 
+def test_catalog_assessment_normalizes_known_excel_record_name():
+    assessment = CatalogAssessment(
+        entity_id="4207",
+        name="Microsoft \n    365 (New)",
+        url="https://www.shl.com/products/product-catalog/view/microsoft-excel-365-new/",
+        test_type="K",
+        eligible_for_recommendation=True,
+        eligibility_source="eligible:catalog_product_record",
+    )
+
+    assert assessment.name == "Microsoft Excel 365 (New)"
+
+
 def test_browser_routes_render_html_pages():
     client = TestClient(app)
 

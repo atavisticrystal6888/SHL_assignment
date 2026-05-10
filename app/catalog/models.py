@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+CANONICAL_NAME_BY_URL = {
+    "https://www.shl.com/products/product-catalog/view/microsoft-excel-365-new/": "Microsoft Excel 365 (New)"
+}
 
 
 class CatalogAssessment(BaseModel):
@@ -24,6 +29,18 @@ class CatalogAssessment(BaseModel):
     eligible_for_recommendation: bool = False
     eligibility_source: str = "ineligible:no_evidence"
     source_snapshot: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_known_names(cls, data):
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        name = normalized.get("name")
+        if isinstance(name, str):
+            cleaned = " ".join(name.split())
+            normalized["name"] = CANONICAL_NAME_BY_URL.get(normalized.get("url"), cleaned)
+        return normalized
 
     @field_validator("name")
     @classmethod

@@ -84,23 +84,38 @@ def _extract_role_block(section: str, role: str) -> str:
 
 
 def _extract_expected_shortlist(text: str) -> list[ExpectedRecommendation]:
-    items: list[ExpectedRecommendation] = []
-    seen_urls: set[str] = set()
+    table_blocks: list[list[str]] = []
+    current_block: list[str] = []
     for line in text.splitlines():
-        if not line.startswith("|") or "https://www.shl.com/products/product-catalog/view/" not in line:
+        if line.startswith("|"):
+            current_block.append(line)
             continue
-        url_match = re.search(r"<(https://www\.shl\.com/products/product-catalog/view/[^>]+)>", line)
-        if not url_match:
-            continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) < 6 or not cells[0].strip().isdigit():
-            continue
-        url = url_match.group(1)
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-        items.append(ExpectedRecommendation(name=cells[1].strip("* "), test_type=cells[2], url=url))
-    return items
+        if current_block:
+            table_blocks.append(current_block)
+            current_block = []
+    if current_block:
+        table_blocks.append(current_block)
+
+    for block in reversed(table_blocks):
+        items: list[ExpectedRecommendation] = []
+        seen_urls: set[str] = set()
+        for line in block:
+            if "https://www.shl.com/products/product-catalog/view/" not in line:
+                continue
+            url_match = re.search(r"<(https://www\.shl\.com/products/product-catalog/view/[^>]+)>", line)
+            if not url_match:
+                continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) < 6 or not cells[0].strip().isdigit():
+                continue
+            url = url_match.group(1)
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            items.append(ExpectedRecommendation(name=cells[1].strip("* "), test_type=cells[2], url=url))
+        if items:
+            return items
+    return []
 
 
 def parse_trace_fixture(fixture: TraceFixture) -> ParsedTrace:

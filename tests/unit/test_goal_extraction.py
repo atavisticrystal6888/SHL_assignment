@@ -227,6 +227,20 @@ def test_refinement_intent_wins_over_confirmation_language():
     assert goal.latest_intent == "refine"
 
 
+def test_drop_rest_is_captured_as_skill_exclusion():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="Add AWS and Docker. Drop REST - the API design signal will already come through in Spring and the live interview.",
+            )
+        ]
+    )
+
+    assert "REST" in goal.excluded_terms
+    assert "REST" not in goal.skills
+
+
 def test_prior_shortlist_hints_are_recovered_from_assistant_messages():
     hints = extract_prior_shortlist_hints(
         [
@@ -335,3 +349,74 @@ def test_healthcare_admin_screening_does_not_require_seniority():
     )
 
     assert "seniority" not in goal.missing_decision_factors
+
+
+def test_office_simulation_refinement_does_not_require_language():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(role="user", content="I need to quickly screen admin assistants for Excel and Word daily."),
+            ConversationMessage(role="assistant", content="Here is a shortlist with MS Excel and MS Word."),
+            ConversationMessage(role="user", content="Actually add a simulation so we can capture the capabilities."),
+        ]
+    )
+
+    assert "simulation" in goal.assessment_focus
+    assert "language" not in goal.missing_decision_factors
+
+
+def test_need_assessments_for_plural_role_is_extracted():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="We need assessments for warehouse operators in a manufacturing site where safety matters.",
+            )
+        ]
+    )
+
+    assert "Warehouse operators in a manufacturing site where safety matters" in goal.role_titles
+    assert "role" not in goal.missing_decision_factors
+
+
+def test_dotted_uk_locale_prompt_preserves_role_and_locale():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content=(
+                    "We're hiring entry-level U.K. contact-centre agents for customer calls. "
+                    "I need a phone simulation, a spoken-English screen, and a retail/customer-service fit measure."
+                ),
+            )
+        ]
+    )
+
+    assert goal.locale == "UK"
+    assert goal.role_titles == ["Entry-level uk contact-centre agents"]
+    assert "locale" not in goal.missing_decision_factors
+
+
+def test_hiring_prompt_does_not_strip_leading_role_letter():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(
+                role="user",
+                content="I'm hiring administrative assistants who use Excel and Word every day.",
+            )
+        ]
+    )
+
+    assert goal.role_titles == ["Administrative assistants"]
+
+
+def test_simulation_refinement_drops_stale_prefer_short_constraint():
+    goal = extract_user_goal(
+        [
+            ConversationMessage(role="user", content="I need to quickly screen admin assistants for Excel and Word daily."),
+            ConversationMessage(role="assistant", content="Here is a shortlist with MS Excel and MS Word."),
+            ConversationMessage(role="user", content="Actually add a simulation so we can capture the capabilities."),
+        ]
+    )
+
+    assert goal.assessment_focus == ["simulation", "skills"]
+    assert "prefer_short" not in goal.constraints

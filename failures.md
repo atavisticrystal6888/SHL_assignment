@@ -2,44 +2,50 @@
 
 This document records the failures identified during the testing of the `/chat` endpoint on `https://shl-assessment-recommender-zh5s.onrender.com/chat`, specifically evaluated against the provided `GenAI_SampleConversations` traces and the `SHL_AI_Intern_Assignment.md` criteria.
 
+*Note: This document has been updated to reflect recent fixes deployed to the endpoint.*
+
 ## Behavioral and Flow Failures
 
-### 1. Premature Recommendations & Lack of Clarification
+### 1. Premature Recommendations & Lack of Clarification [✅ RESOLVED]
 *   **Criterion:** "Clarify vague queries before recommending."
-*   **Observed Failure:** The sample traces (e.g., C2, C10) demonstrate that the agent should wait and ask clarifying questions (returning `recommendations: []`) in the early turns when context is insufficient. Instead, the deployed app aggressively returns exactly 10 recommendations on **Turn 1** for many traces (C4, C5, C6, C7, C8). It fails to hold back and clarify vague requirements.
+*   **Original Failure:** The app aggressively returned exactly 10 recommendations on Turn 1 for many traces (C4, C5, C6, C7, C8). It failed to hold back and clarify vague requirements.
+*   **Current Status:** **Resolved.** Re-testing the C4 trace ("I'm looking for a battery for experienced customer service reps") now successfully returns 0 recommendations and asks for clarification: *"What role or job profile should the SHL assessment support..."*
 
-### 2. False Triggering of "Comparison" Logic
+### 2. False Triggering of "Comparison" Logic [✅ RESOLVED]
 *   **Criterion:** "Compare when asked."
-*   **Observed Failure:** The agent misinterprets general conversation as comparison requests based on naive keyword matching. In **Trace C1**, the user states: *"Selection — comparing candidates against a leadership benchmark."* The endpoint mistakenly triggers its catalog-comparison logic on the word "comparing" and asks: *"Which SHL catalog assessments should I compare? Please provide two assessment names..."* instead of interpreting it as contextual information for a role.
+*   **Original Failure:** The agent misinterpreted general conversation as comparison requests based on naive keyword matching (e.g., triggering on the phrase *"comparing candidates against a leadership benchmark"*).
+*   **Current Status:** **Resolved.** Re-testing this phrase now successfully recognizes the context for a role rather than triggering the catalog comparison logic.
 
-### 3. Mismanagement of `end_of_conversation` Flag
+### 3. Mismanagement of `end_of_conversation` Flag [✅ RESOLVED]
 *   **Criterion:** `end_of_conversation` is `true` only when the agent considers the task complete.
-*   **Observed Failure:** Because the agent aggressively outputs 10 recommendations on Turn 1, it also prematurely sets `end_of_conversation: true` on Turn 1. The sample traces show that the conversation should remain open (`false`) during the refinement phase, only closing when the user signals they are satisfied with the final shortlist. The deployed logic breaks this multi-turn design by effectively ending the conversation immediately.
+*   **Original Failure:** Because the agent aggressively output 10 recommendations on Turn 1, it also prematurely set `end_of_conversation: true`.
+*   **Current Status:** **Resolved.** Since the premature recommendation issue is fixed, the flag now remains `false` during the clarification phases as expected.
 
 ### 4. Precision vs. Padding in Shortlists
 *   **Criterion:** Recommend between 1 and 10 assessments once it has enough context.
 *   **Observed Failure:** The sample traces indicate highly scoped, precise shortlists (e.g., exactly 3 items in C1, exactly 5 items in C2). The deployed application consistently "pads" its response to exactly 10 items almost every time. When it exhausts highly relevant tests, it includes generic or tangentially related assessments to reach the count of 10, significantly reducing the precision (Recall@K accuracy) of the shortlist.
 
-### 5. Out-of-Scope (General Hiring Advice)
+### 5. Out-of-Scope (General Hiring Advice) [✅ RESOLVED]
 *   **Criterion:** Refuse general hiring advice.
-*   **Observed Failure:** When asked "How many stages should my interview process have?", instead of a firm refusal, the agent attempts to accommodate the request by responding: *"To determine the ideal number of stages for your interview process, consider the role, seniority, and assessment focus."* This violates the strict out-of-scope rules.
+*   **Original Failure:** When asked *"How many stages should my interview process have?"*, instead of a firm refusal, the agent attempted to accommodate the request.
+*   **Current Status:** **Resolved.** It now returns a strict refusal: *"I can help with SHL assessment selection, but not general hiring content such as job descriptions, hiring strategy..."*
 
 ### 6. Refinement Appending Constraints
 *   **Criterion:** Refine when the user changes constraints mid-conversation.
-*   **Observed Failure:** When tasked to append new constraints to an already established shortlist (e.g., "Actually, add personality tests too" after a list of Java tests is returned), the agent updates its conversational text acknowledging the addition but fails to actually update the JSON `recommendations` array. It returns the exact same list of 10 technical tests without appending the requested personality test.
+*   **Observed Failure:** When tasked to append new constraints to an already established shortlist (e.g., "Actually, add personality tests too" after a list of Java tests is returned), the agent updates its conversational text acknowledging the addition but fails to actually update the JSON `recommendations` array. It returns the exact same list of technical tests without appending the requested personality test.
 
 ### 7. Drill-Down Refinement (Partial Pass / Flow Failure)
 *   **Criterion:** "Refine when the user changes constraints mid-conversation."
 *   **Observed Partial Pass:** When asked to filter an existing list of recommendations (e.g., *"Only show me the entry-level ones from that list"*), the agent successfully understands the new constraint context ("entry-level").
 *   **Observed Failure:** Instead of seamlessly filtering the existing array and returning the updated shortlist, the agent drops back into its clarification loop, replying: *"For an entry-level Java developer, I can show you entry-level assessments. What focus would you like..."* with 0 recommendations, disrupting the flow.
 
-### 8. Hybrid Intents & Intent Collision
+### 8. Hybrid Intents & Intent Collision [❌ STILL FAILING]
 *   **Criterion:** Handle realistic, multi-faceted user inputs.
 *   **Observed Failure:** When a query contains both a request for recommendation and a comparison (e.g., *"I need a test for a Java developer. Also, what is the difference between 'Java 8' and 'Core Java'?"*), the agent fails to address both intents. It completely ignores the primary recommendation request and gets stuck in a loop trying to resolve ambiguities in the comparison logic.
 
 ### 9. Handling Ambiguity ("No Preference")
 *   **Criterion:** "The simulated user... says it has no preference when asked something outside its facts" (From Evaluation methodology).
-*   **Observed Failure:** When the agent asks for a seniority level and the user replies *"I have no preference"*, the agent fails to accept this as a valid non-constraint. Instead of providing a broad list of recommendations, it loops and essentially re-asks the same question: *"For a Java developer, consider seniority level and assessment focus to choose a suitable evaluation method."* 
+*   **Observed Failure:** When the agent asks for a seniority level and the user replies *"I have no preference"*, the agent fails to accept this as a valid non-constraint. Instead of providing a broad list of recommendations, it loops and essentially re-asks the same question.
 
 ### 10. Anaphoric Reference (Pronoun Resolution / Conversational Memory)
 *   **Criterion:** "Translate the catalog, the user's goal, and the conversation history into prompts..."

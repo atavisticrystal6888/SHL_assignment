@@ -16,6 +16,8 @@ def health_payload() -> dict[str, str]:
 
 @router.get("/health", include_in_schema=False, response_model=None)
 def health(request: Request) -> FileResponse | JSONResponse:
+    if request.query_params.get("format", "").lower() == "json":
+        return JSONResponse(content=health_payload())
     if wants_html(request):
         return template_response("health.html")
     return JSONResponse(content=health_payload())

@@ -104,6 +104,16 @@ def test_browser_routes_render_html_pages():
     assert "SHL Recommender Session" in chat.text
 
 
+def test_health_json_override_bypasses_browser_html_negotiation():
+    client = TestClient(app)
+
+    response = client.get("/health?format=json", headers={"accept": "text/html"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert response.headers["content-type"].startswith("application/json")
+
+
 def test_malformed_chat_endpoint_avoids_default_fastapi_error_body():
     client = TestClient(app)
     response = client.post("/chat", json={"messages": []})

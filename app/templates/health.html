@@ -102,7 +102,9 @@
         const label = document.getElementById("status-label");
         const output = document.getElementById("health-json");
         try {
-          const response = await fetch("/health");
+          const response = await fetch("/health?format=json", {
+            headers: { Accept: "application/json" },
+          });
           const payload = await response.json();
           label.textContent = payload.status === "ok" ? "Healthy" : "Unavailable";
           output.textContent = JSON.stringify(payload, null, 2);

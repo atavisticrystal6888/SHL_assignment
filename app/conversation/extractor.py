@@ -44,7 +44,14 @@ EXCLUSION_TERMS = {
 REFINEMENT_TERMS = (
     "actually",
     "add",
+    "also include",
     "drop",
+    "filter",
+    "keep only",
+    "make it",
+    "narrow",
+    "only show",
+    "only the",
     "remove",
     "exclude",
     "replace",
@@ -53,7 +60,9 @@ REFINEMENT_TERMS = (
     "update",
     "switch",
     "pivot",
-    "make it",
+    "show me the",
+    "from that list",
+    "from the list",
 )
 CONFIRMATION_TERMS = (
     "confirmed",
@@ -330,13 +339,13 @@ def compute_missing_factors(
     requires_locale = requires_language and any(language == "English" for language in languages) and any(
         hint in lowered_conversation for hint in LANGUAGE_REQUIRED_HINTS
     )
-    if role_titles and assessment_focus and not (requires_language and not languages) and not (requires_locale and not locale):
+    if role_titles and assessment_focus and seniority is not None and not (requires_language and not languages) and not (requires_locale and not locale):
         return []
 
     missing: list[str] = []
     if not role_titles:
         missing.append("role")
-    if seniority is None and (not role_titles or not assessment_focus):
+    if seniority is None and not has_prior_recommendation:
         missing.append("seniority")
     if not assessment_focus:
         missing.append("assessment_focus")
@@ -369,7 +378,13 @@ def refinement_replaces_prior_context(
     latest_roles: list[str],
     has_prior_recommendation: bool,
 ) -> bool:
-    return has_prior_recommendation and has_refinement_intent(latest_text) and bool(latest_roles)
+    if not has_prior_recommendation or not latest_roles:
+        return False
+    if has_refinement_intent(latest_text):
+        return True
+    # Any new role after a prior recommendation implies a context switch,
+    # even without explicit refinement terms like "switch" or "actually".
+    return True
 
 
 def summarize_user_goal(goal: UserGoalProfile) -> str:
@@ -516,7 +531,16 @@ def has_refinement_intent(text: str) -> bool:
 
 def has_comparison_intent(text: str) -> bool:
     lowered = f" {text.lower()} "
-    return any(term in lowered for term in COMPARISON_TERMS)
+    for term in COMPARISON_TERMS:
+        if term.strip() != term:
+            # Terms with leading/trailing spaces (e.g. " vs ") use substring match
+            if term in lowered:
+                return True
+        else:
+            # Use word-boundary match to avoid false positives like "comparing" matching "compare"
+            if re.search(rf"\b{re.escape(term)}\b", lowered):
+                return True
+    return False
 
 
 def _spans_overlap(span: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
@@ -599,7 +623,7 @@ def extract_constraints(text: str) -> list[str]:
 
 def extract_seniority(text: str) -> str | None:
     lowered = text.lower()
-    if "no preference" in lowered and "seniority" in lowered:
+    if "no preference" in lowered:
         return "no preference"
     for term, value in SENIORITY_TERMS.items():
         if re.search(rf"\b{re.escape(term)}\b", lowered):
@@ -624,6 +648,13 @@ def extract_focus(text: str) -> list[str]:
     if extract_skills(text) and re.search(r"\bwhat\s+(?:shl\s+)?assessments?\b", lowered):
         focus.append("skills")
     if "assess" in lowered and "skills" in lowered:
+        focus.append("skills")
+    # Infer "skills" focus for explicit test/assessment requests with a role,
+    # to avoid endless clarification without LLM.
+    if not focus and re.search(r"\b(?:test|tests|testing|evaluate|evaluation)\b", lowered) and extract_role_titles(text):
+        focus.append("skills")
+    # Infer "skills" when multiple specific skills are mentioned (strong signal)
+    if not focus and len(extract_skills(text)) >= 2:
         focus.append("skills")
     return dedupe(focus)
 
@@ -667,6 +698,10 @@ def extract_user_goal_result(
     latest_seniority = extract_seniority(latest_text)
     seniority = latest_seniority if latest_is_refinement and latest_seniority else extract_seniority(base_text)
     focus = extract_focus(base_text)
+    # During refinement, merge any new focus from the latest message (e.g. "add personality tests")
+    if latest_is_refinement and not replace_prior_context:
+        latest_focus = extract_focus(latest_text)
+        focus = dedupe(focus + latest_focus)
     constraints = extract_constraints(base_text)
     missing = compute_missing_factors(
         roles,

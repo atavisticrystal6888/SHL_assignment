@@ -73,30 +73,10 @@
       }
 
       .sidebar p,
-      .hint,
-      .muted {
+      .hint {
         margin: 0;
         color: var(--muted);
         line-height: 1.65;
-      }
-
-      .shortcut {
-        margin-top: 1rem;
-        padding: 0.9rem 1rem;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.7);
-      }
-
-      .shortcut button {
-        width: 100%;
-        margin-top: 0.7rem;
-        padding: 0.75rem 0.9rem;
-        border: 0;
-        border-radius: 14px;
-        background: var(--accent-soft);
-        color: var(--accent);
-        font-weight: 700;
-        cursor: pointer;
       }
 
       .chat-panel {
@@ -238,18 +218,6 @@
           <div class="eyebrow">Interactive Client</div>
           <h1>Chat Workspace</h1>
           <p>Send hiring prompts to the existing backend and inspect replies without leaving the browser.</p>
-          <div class="shortcut">
-            <div class="muted">Suggested prompt</div>
-            <button type="button" data-prompt="I am hiring a mid-level Java developer and want to assess technical skills.">
-              Mid-level Java developer
-            </button>
-          </div>
-          <div class="shortcut">
-            <div class="muted">Another prompt</div>
-            <button type="button" data-prompt="I need a shortlist for graduate management trainees with cognitive, personality, and situational judgment coverage.">
-              Graduate management trainee
-            </button>
-          </div>
         </aside>
         <section class="panel chat-panel">
           <header class="chat-header">
@@ -331,13 +299,6 @@
         await sendMessage(text);
       });
 
-      document.querySelectorAll("[data-prompt]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const text = button.getAttribute("data-prompt") || "";
-          promptField.value = text;
-          await sendMessage(text);
-        });
-      });
     </script>
   </body>
 </html>

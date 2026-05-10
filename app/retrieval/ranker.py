@@ -155,16 +155,22 @@ def select_focus_coverage(matches: list[CatalogMatch], preferred_categories: lis
     if len(focuses) < 2:
         return matches[:limit]
 
+    # Ensure proportional representation across focus areas.
+    # Reserve at least 2 slots (or 1 if limit is small) per focus, then fill with best scores.
+    slots_per_focus = max(1, limit // len(focuses))
     selected: list[CatalogMatch] = []
     seen: set[str] = set()
     for focus in focuses:
+        count = 0
         for match in matches:
             if match.assessment.entity_id in seen:
                 continue
             if matches_focus(match.assessment, focus):
                 selected.append(match)
                 seen.add(match.assessment.entity_id)
-                break
+                count += 1
+                if count >= slots_per_focus:
+                    break
 
     for match in matches:
         if match.assessment.entity_id in seen:
@@ -235,7 +241,15 @@ def rank_catalog(
             )
         )
     matches.sort(key=lambda match: (-match.score, match.assessment.name.lower()))
-    return select_focus_coverage(matches, preferred_categories, limit=limit)
+    selected = select_focus_coverage(matches, preferred_categories, limit=limit)
+    # Drop low-scoring padding: keep only results scoring at least 25% of the top score,
+    # but only when a single focus is active. With multiple focuses the coverage selector
+    # already ensures balance so the threshold would remove needed diversity.
+    if selected and len(set(preferred_categories) & set(CATEGORY_BY_FOCUS.keys())) < 2:
+        top_score = selected[0].score
+        threshold = top_score * 0.25
+        selected = [m for m in selected if m.score >= threshold]
+    return selected
 
 
 def render_rerank_candidate(match: CatalogMatch) -> str:

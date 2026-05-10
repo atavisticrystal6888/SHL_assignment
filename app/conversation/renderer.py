@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.api.schemas import ChatResponse
 from app.catalog.models import CatalogAssessment
 from app.catalog.repository import CatalogResolution
-from app.conversation.extractor import UserGoalProfile, summarize_user_goal
+from app.conversation.extractor import UserGoalProfile, has_confirmation_intent, summarize_user_goal
 from app.conversation.policy import AgentDecision
 from app.llm.client import LLMClient
 from app.llm.prompts import build_grounded_reply_prompt
@@ -98,11 +98,14 @@ def render_recommendations(goal: UserGoalProfile, matches: list[CatalogMatch]) -
         }
         for match in matches[:10]
     ]
+    # End the conversation when the user supplied a complete context
+    # (role + seniority + focus all present with no missing factors).
+    end = not goal.missing_decision_factors
     reply = (
         f"Here is a catalog-grounded SHL shortlist for {role}, prioritized from the available catalog matches: "
         f"{shortlist_anchor_text(matches)}."
     )
-    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=True)
+    return ChatResponse(reply=reply, recommendations=recommendations, end_of_conversation=end)
 
 
 def render_refinement(goal: UserGoalProfile, matches: list[CatalogMatch]) -> ChatResponse:

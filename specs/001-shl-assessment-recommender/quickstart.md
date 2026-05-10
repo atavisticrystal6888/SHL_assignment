@@ -125,6 +125,7 @@ Required checks:
 2. Confirm `GET /health` responds with `{"status":"ok"}`.
 3. Confirm `POST /chat` accepts stateless histories and returns the exact schema for valid and malformed request bodies.
 4. Confirm default documentation routes such as `/docs`, `/redoc`, and `/openapi.json` are not exposed in the submitted service.
+5. Run `python scripts/validate_render_deployment.py https://your-service-name.onrender.com` against the live Render URL.
 5. Record the first cold-start `/health` timing and confirm it completes within 2 minutes.
 6. Confirm steady-state chat responses stay within evaluator timeout.
 

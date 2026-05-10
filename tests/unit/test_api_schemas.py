@@ -5,6 +5,7 @@ from app.api.schemas import ChatResponse, Recommendation
 from app.api.validators import parse_chat_request, validate_chat_response
 from app.catalog.models import CatalogAssessment
 from app.catalog.repository import CatalogRepository
+from app.dev_main import app as dev_app
 from app.main import app
 
 
@@ -86,14 +87,14 @@ def test_catalog_assessment_normalizes_known_excel_record_name():
 
 
 def test_browser_routes_render_html_pages():
-    client = TestClient(app)
+    client = TestClient(dev_app)
 
     landing = client.get("/", headers={"accept": "text/html"})
     assert landing.status_code == 200
     assert "text/html" in landing.headers["content-type"]
     assert "Assessment recommendations with a browser entrypoint." in landing.text
 
-    health = client.get("/health", headers={"accept": "text/html"})
+    health = client.get("/health/ui", headers={"accept": "text/html"})
     assert health.status_code == 200
     assert "text/html" in health.headers["content-type"]
     assert "Service Health" in health.text
@@ -102,6 +103,16 @@ def test_browser_routes_render_html_pages():
     assert chat.status_code == 200
     assert "text/html" in chat.headers["content-type"]
     assert "SHL Recommender Session" in chat.text
+
+
+def test_submission_health_stays_json_for_browser_accept_headers():
+    client = TestClient(app)
+
+    response = client.get("/health", headers={"accept": "text/html"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert response.headers["content-type"].startswith("application/json")
 
 
 def test_malformed_chat_endpoint_avoids_default_fastapi_error_body():

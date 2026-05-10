@@ -8,7 +8,7 @@ import re
 from app.conversation.extractor import UserGoalProfile
 
 LEGAL_TERMS = ("legal advice", "legally", "compliant", "law", "regulation")
-GENERAL_HIRING_TERMS = ("interview questions", "hiring strategy", "recruiting strategy", "candidate scoring")
+GENERAL_HIRING_TERMS = ("interview questions", "hiring strategy", "recruiting strategy", "candidate scoring", "interview process", "interview stages")
 JOB_DESCRIPTION_TERMS = ("job description", "job ad", "job posting", "posting", " jd ")
 HIRING_AUTHORING_VERBS = ("write", "draft", "create", "generate", "prepare", "compose", "build", "make", "rewrite")
 NON_SHL_TERMS = ("non-shl", "non shl", "hackerrank", "codility", "testgorilla", "mercer")
@@ -45,7 +45,12 @@ def is_general_hiring_request(text: str) -> bool:
         return True
     has_job_description_target = any(contains_phrase(text, term) for term in JOB_DESCRIPTION_TERMS)
     has_authoring_verb = any(contains_phrase(text, term) for term in HIRING_AUTHORING_VERBS)
-    return has_job_description_target and has_authoring_verb
+    if has_job_description_target and has_authoring_verb:
+        return True
+    # Catch "how many stages/rounds should my interview..." style questions
+    if re.search(r"\bhow\s+many\b.*\b(?:interview|hiring|rounds?|stages?)\b", text, flags=re.IGNORECASE):
+        return True
+    return False
 
 
 def decide_next_action(goal: UserGoalProfile) -> AgentDecision:
